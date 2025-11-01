@@ -210,6 +210,7 @@ import bankAccountRoutes from './routes/bankAccountsRoutes.js';
 import menuRoutes from './routes/menuRoutes.js';
 import bookingRoutes from './routes/bookingRoutes.js';
 import mapRoutes from './routes/mapRoutes.js';
+import CustomReviewRoutes from './routes/customReviewRoutes.js';
 // import vacateRoutes from './routes/vacateRoutes.js';
 import wishlistRoutes from './routes/wishlistRoutes.js';
 import ticketRoutes from './routes/ticketRoutes.js';
@@ -355,6 +356,7 @@ app.use("/api/menu", menuRoutes);
 app.use("/api/bank-accounts", bankAccountRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/map", mapRoutes);
+app.use("/api/custom-reviews", CustomReviewRoutes);
 // app.use("/api/vacate", vacateRoutes);
 
 // Health check endpoint
