@@ -4184,7 +4184,8 @@ export const getallBookings = async (req, res) => {
         property: booking.propertyId ? {
           name: booking.propertyId.name,
           locality: booking.propertyId.locality,
-          city: booking.propertyId.city
+          city: booking.propertyId.city,
+          OwnerID: booking.clientId
         } : null,
         roomType: booking.roomType?.name || 'N/A',
         // Display first room or summary for multiple rooms
@@ -4200,8 +4201,11 @@ export const getallBookings = async (req, res) => {
         moveInDate: booking.moveInDate,
         moveOutDate: booking.moveOutDate,
         status: booking.bookingStatus,
+        paymentInfo: booking.paymentInfo || {},
         paymentStatus: booking.paymentInfo?.paymentStatus || 'pending',
         transferStatus: booking.transferStatus || 'pending',
+        transferDetails: booking.transferDetails || {},
+        payments: booking.payments || [],
         pricing: booking.pricing,
         approvedBy: booking.approvedBy?.name || null,
         approvedAt: booking.approvedAt || null
