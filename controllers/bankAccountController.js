@@ -100,11 +100,12 @@ export const getPropertyBankAccount = async (req, res) => {
 // };
 export const getAllBankAccounts = async (req, res) => {
   try {
-    const { status, clientId, verificationStatus } = req.query;
+    const { status, clientId, propertyId,  verificationStatus } = req.query;
    
     const filter = { isActive: true };
     if (status) filter.status = status;
     if (clientId) filter.clientId = clientId;
+    if (propertyId) filter.propertyId = propertyId;
     if (verificationStatus) filter.verificationStatus = verificationStatus;
  
     const result = await BankAccount.find(filter)

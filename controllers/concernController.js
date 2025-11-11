@@ -2417,6 +2417,7 @@ export const addInternalNote = async (req, res) => {
 };
 
 // Get concerns for property (client view) - CORRECTED VERSION
+// Get concerns for property (client view) - CORRECTED VERSION
 export const getPropertyConcerns = async (req, res) => {
   try {
     const { propertyId } = req.params;

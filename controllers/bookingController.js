@@ -3437,15 +3437,20 @@ export const getBookingsByProperty = async (req, res) => {
         locality: booking.propertyId.locality,
         city: booking.propertyId.city
       } : null,
+      customerDetails: booking.customerDetails || {},
       roomType: booking.roomType?.name || 'N/A',
       roomNumber: booking.roomDetails?.[0]?.roomNumber || 'N/A',
       floor: booking.roomDetails?.[0]?.floor || 'N/A',
       moveInDate: booking.moveInDate,
       moveOutDate: booking.moveOutDate,
       bookingStatus: booking.bookingStatus,
+      paymentInfo: booking.paymentInfo || {},
       paymentStatus: booking.paymentInfo?.paymentStatus || 'pending',
       transferStatus: booking.transferStatus || 'pending',
       pricing: booking.pricing,
+      transferStatus: booking.transferStatus || 'manual_pending',
+      transferDetails: booking.transferDetails || {},
+      outstandingAmount: booking.outstandingAmount || 0,
       approvedBy: booking.approvedByDetails,
       approvedAt: booking.approvedAt || null,
       roomDetails: booking.roomDetails,
@@ -4175,17 +4180,19 @@ export const getallBookings = async (req, res) => {
 
       return {
         id: booking._id,
+        
         user: booking.userId ? {
           name: booking.userId.name,
           email: booking.userId.email,
           phone: booking.userId.phone,
           clientId: booking.userId.clientId,
         } : null,
+        clientId: booking.clientId,
         property: booking.propertyId ? {
           name: booking.propertyId.name,
           locality: booking.propertyId.locality,
           city: booking.propertyId.city,
-          OwnerID: booking.clientId
+          _id: booking.propertyId._id // Add property ID for transfer
         } : null,
         roomType: booking.roomType?.name || 'N/A',
         // Display first room or summary for multiple rooms
@@ -4207,7 +4214,7 @@ export const getallBookings = async (req, res) => {
         transferDetails: booking.transferDetails || {},
         payments: booking.payments || [],
         pricing: booking.pricing,
-        approvedBy: booking.approvedBy?.name || null,
+        approvedBy: booking.approvedBy || null,
         approvedAt: booking.approvedAt || null
       };
     });

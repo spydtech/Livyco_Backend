@@ -17,9 +17,9 @@ router.post("/", verifyToken, createTicket);
 router.get("/client/:clientId", verifyToken, getTicketsByClient);
 
 // Get all tickets (for admin)
-router.get("/", protectAdmin, authorizeAdmin(['admin']),  getAllTickets);
+router.get("/", protectAdmin, authorizeAdmin(['admin']), getAllTickets);
 
-// Update ticket (status / assignedTo / comment)
+// Update ticket (status / assignedTo / priority)
 router.put("/:id", protectAdmin, authorizeAdmin(['admin']), updateTicket);
 
 export default router;

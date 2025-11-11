@@ -52,9 +52,13 @@ import {
   getClientPaymentsForBooking,
   getPaymentsByClientId,
   // checkRazorpayConfig,
-  // initiateManualTransfer,  // Add this import
-  checkTransferStatus      // Add this import
+  initiateManualTransfer,  // Add this import
+  checkTransferStatus,      // Add this import
+   sendMessage,
+  getClientMessages
 } from "../controllers/paymentController.js";
+import { protectAdmin } from "../middlewares/authMiddleware.js";
+import { authorizeAdmin } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
@@ -73,7 +77,12 @@ router.get("/payments/history/:bookingId", verifyToken, getPaymentHistory);
 router.get("/payments/client-payments/:propertyId/:bookingId", verifyToken, getClientPaymentsForBooking);
 
 // Transfer routes
-// router.post("/transfer/initiate/:bookingId", verifyToken, initiateManualTransfer);
+ router.post("/payments/transfer/initiate/:bookingId", verifyToken, protectAdmin, initiateManualTransfer);
 router.get("/transfer/status/:bookingId", verifyToken, checkTransferStatus);
+
+router.post("/payments/send-message", verifyToken, sendMessage);
+ 
+// ✅  messages 
+router.get("/payments/client/:clientId/messages", verifyToken, getClientMessages);
 
 export default router;

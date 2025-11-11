@@ -62,6 +62,6 @@ router.put('/:concernId/approve',verifyToken, approveConcern);
 router.put('/:concernId/reject',verifyToken, rejectConcern);
 router.put('/:concernId/complete',verifyToken, completeConcern);
 router.post('/:concernId/notes',verifyToken, addInternalNote);
-router.get('/property/:propertyId',verifyToken, getPropertyConcerns);
+router.get('/property/:propertyId', getPropertyConcerns);
 
 export default router;

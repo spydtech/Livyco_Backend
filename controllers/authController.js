@@ -966,11 +966,18 @@ export const getUser = async (req, res) => {
     const userResponse = {
       id: fullUser._id,
       name: fullUser.name,
+      gender:fullUser.gender,
+      dob:fullUser.dob,
       phone: fullUser.phone,
       email: fullUser.email,
       location: fullUser.location,
+      userType:fullUser.userType,
       clientId: fullUser.clientId,
-      role: fullUser.role
+      institute:fullUser.instituteName,
+      role: fullUser.role,
+      aadhar:fullUser.aadhaarNumber,
+      guardianName:fullUser.guardianName,
+      guardianContact:fullUser.guardianContact,
     };
 
     // If user is a client, add client-specific data
@@ -1054,74 +1061,71 @@ const upload = multer({
 // Updated updateUserProfile function with Cloudinary
 export const updateUserProfile = async (req, res) => {
   try {
-    profileUpload(req, res, async (err) => {
-      if (err) {
-        return res.status(400).json({
-          success: false,
-          message: err.message || 'File upload error'
-        });
-      }
-
-      const { name, location, email, gender, dob, phone, aadhaarNumber,aadharPhoto, userType, } = req.body;
-      const user = await User.findById(req.user.id);
-      
-      if (!user) {
-        // Clean up uploaded file if user not found
-        if (req.file?.path) {
-          await cloudinary.uploader.destroy(req.file.filename);
-        }
-        return res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-      }
-
-      // Update fields
-      user.name = name || user.name;
-      user.location = location || user.location;
-      if (email) user.email = email;
-      if (gender) user.gender = gender;
-      if (dob) user.dob = dob;
-
-      // Handle profile image upload
-      if (req.file) {
-        // Delete old image from Cloudinary if exists
-        if (user.profileImagePublicId) {
-          await cloudinary.uploader.destroy(user.profileImagePublicId);
-        }
-        user.profileImage = req.file.path;
-        user.profileImagePublicId = req.file.filename;
-      }
-
-      const updatedUser = await user.save();
-
-      res.status(200).json({
-        success: true,
-        message: 'Profile updated successfully',
-        user: {
-          id: updatedUser._id,
-          name: updatedUser.name,
-          email: updatedUser.email,
-          phone: updatedUser.phone,
-          location: updatedUser.location,
-          profileImage: updatedUser.profileImage,
-          clientId: updatedUser.clientId,
-          role: updatedUser.role,
-          gender: updatedUser.gender,
-          dob: updatedUser.dob,
-          aadhaarNumber: updatedUser.aadhaarNumber,
-          aadharPhoto: updatedUser.aadharPhoto,
-          userType: updatedUser.userType,
-
-        }
+    const { name, location, email, gender, dob, phone, aadhaarNumber, aadharPhoto, userType, institute, guardianName, guardianContact, whatsappUpdates } = req.body;
+    const user = await User.findById(req.user.id);
+   
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
       });
+    }
+ 
+    // Update fields
+    user.name = name || user.name;
+    user.location = location || user.location;
+    user.email = email || user.email;
+    user.gender = gender || user.gender;
+    user.dob = dob || user.dob;
+    user.phone = phone || user.phone;
+    user.aadhaarNumber = aadhaarNumber || user.aadhaarNumber;
+    user.userType = userType || user.userType;
+    user.institute = institute || user.institute;
+    user.guardianName = guardianName || user.guardianName;
+    user.guardianContact = guardianContact || user.guardianContact;
+    user.whatsappUpdates = whatsappUpdates !== undefined ? whatsappUpdates : user.whatsappUpdates;
+ 
+    // Handle profile image upload only if file exists
+    if (req.file) {
+      // Delete old image from Cloudinary if exists
+      if (user.profileImagePublicId) {
+        await cloudinary.uploader.destroy(user.profileImagePublicId);
+      }
+      user.profileImage = req.file.path;
+      user.profileImagePublicId = req.file.filename;
+    }
+ 
+    const updatedUser = await user.save();
+ 
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+        location: updatedUser.location,
+        profileImage: updatedUser.profileImage,
+        clientId: updatedUser.clientId,
+        role: updatedUser.role,
+        gender: updatedUser.gender,
+        dob: updatedUser.dob,
+        aadhaarNumber: updatedUser.aadhaarNumber,
+        aadharPhoto: updatedUser.aadharPhoto,
+        userType: updatedUser.userType,
+        institute: updatedUser.institute,
+        guardianName: updatedUser.guardianName,
+        guardianContact: updatedUser.guardianContact,
+        whatsappUpdates: updatedUser.whatsappUpdates
+      }
     });
   } catch (error) {
     // Clean up file if error occurs
     if (req.file?.path) {
       await cloudinary.uploader.destroy(req.file.filename);
     }
-    
+   
     console.error('Update profile error:', error);
     res.status(500).json({
       success: false,
@@ -1129,7 +1133,7 @@ export const updateUserProfile = async (req, res) => {
       error: error.message
     });
   }
-};
+};  
 
 // Updated deleteUserProfile function with Cloudinary
 export const deleteUserProfile = async (req, res) => {
