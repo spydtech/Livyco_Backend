@@ -1557,6 +1557,7 @@ import User from '../models/User.js';
 import BankAccount from '../models/BankAccount.js'; // Add this line
 import Transfer from '../models/Transfer.js'; // Add this line
 import Admin from '../models/Admin.js';
+import { NotificationService } from './notificationController.js';
 
 // Initialize Razorpay
 // Initialize Razorpay with error handling
@@ -1583,6 +1584,7 @@ try {
   razorpay = null;
 }
 
+// Room availability check function
 // Room availability check function
 const checkRoomAvailabilityBeforeBooking = async (propertyId, selectedRooms, moveInDate, endDate, session) => {
   const unavailableRooms = [];
@@ -1700,6 +1702,120 @@ const calculateTransferBreakdown = (totalAmount) => {
 // };
 
 
+// export const createOrder = async (req, res) => {
+//   try {
+//     const { amount, currency = 'INR', receipt, bookingData } = req.body;
+
+//     console.log('Creating order for amount:', amount, 'Currency:', currency);
+
+//     // Validate Razorpay instance
+//     if (!razorpay) {
+//       console.error(' Razorpay not initialized');
+//       return res.status(500).json({
+//         success: false,
+//         message: 'Payment gateway not initialized. Please check server configuration.'
+//       });
+//     }
+
+//     // Validate amount
+//     if (!amount || amount <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Valid amount is required'
+//       });
+//     }
+
+//     // Convert to integer and validate minimum amount
+//     const amountInPaise = parseInt(amount);
+//     if (isNaN(amountInPaise) || amountInPaise < 100) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Amount must be at least 1 INR (100 paise)'
+//       });
+//     }
+
+//     const options = {
+//       amount: amountInPaise,
+//       currency: currency,
+//       receipt: receipt || `receipt_${Date.now()}`,
+//       payment_capture: 1
+//     };
+
+//     // Add notes only if bookingData exists
+//     if (bookingData) {
+//       options.notes = {
+//         booking_data: JSON.stringify(bookingData)
+//       };
+//     }
+
+//     console.log('📦 Order creation options:', {
+//       amount: options.amount,
+//       currency: options.currency,
+//       receipt: options.receipt
+//     });
+
+//     // Create order with detailed error handling
+//     let order;
+//     try {
+//       order = await razorpay.orders.create(options);
+//       console.log('Order created successfully:', order.id);
+//     } catch (razorpayError) {
+//       console.error(' Razorpay API error:', {
+//         statusCode: razorpayError.statusCode,
+//         error: razorpayError.error,
+//         description: razorpayError.error?.description,
+//         code: razorpayError.error?.code
+//       });
+
+//       // Handle specific Razorpay errors
+//       if (razorpayError.error?.code === 'BAD_REQUEST_ERROR') {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Payment error: ${razorpayError.error.description}`,
+//           code: razorpayError.error.code
+//         });
+//       }
+
+//       if (razorpayError.error?.code === 'UNAUTHORIZED_ERROR') {
+//         return res.status(401).json({
+//           success: false,
+//           message: 'Invalid Razorpay credentials',
+//           code: razorpayError.error.code
+//         });
+//       }
+
+//       // Generic Razorpay error
+//       return res.status(400).json({
+//         success: false,
+//         message: razorpayError.error?.description || 'Razorpay API error',
+//         code: razorpayError.error?.code
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       order: {
+//         id: order.id,
+//         amount: order.amount,
+//         currency: order.currency,
+//         receipt: order.receipt
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error(' Order creation error:', error.message);
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create payment order',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
+//   }
+// };
+
+
+
+// Create Razorpay order
 export const createOrder = async (req, res) => {
   try {
     const { amount, currency = 'INR', receipt, bookingData } = req.body;
@@ -1811,26 +1927,28 @@ export const createOrder = async (req, res) => {
   }
 };
 
-
-
-
-// Validate payment and update booking
+// Validate payment and update booking - ENHANCED VERSION
+// Validate payment and CREATE booking after successful payment
+// Validate payment and CREATE booking after successful payment - ENHANCED VERSION
 export const validatePayment = async (req, res) => {
-  const session = await mongoose.startSession();
+  let session;
   
   try {
+    session = await mongoose.startSession();
     await session.startTransaction();
     
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      bookingData
+    const { 
+      razorpay_order_id, 
+      razorpay_payment_id, 
+      razorpay_signature, 
+      bookingData 
     } = req.body;
 
-    console.log('Validating payment...', {
+    console.log('🔍 Starting payment validation and booking creation...', {
       order_id: razorpay_order_id,
-      payment_id: razorpay_payment_id
+      payment_id: razorpay_payment_id,
+      has_booking_data: !!bookingData,
+      user_id: req.user?.id
     });
 
     // Validate required fields
@@ -1859,9 +1977,10 @@ export const validatePayment = async (req, res) => {
       .update(body)
       .digest('hex');
 
-    console.log(' Signature verification:', {
-      expected: expectedSignature,
-      received: razorpay_signature
+    console.log('🔐 Signature verification:', {
+      expected_length: expectedSignature.length,
+      received_length: razorpay_signature.length,
+      match: expectedSignature === razorpay_signature
     });
 
     if (expectedSignature !== razorpay_signature) {
@@ -1873,20 +1992,20 @@ export const validatePayment = async (req, res) => {
       });
     }
 
-    console.log(' Payment signature verified');
+    console.log('✅ Payment signature verified');
 
     // Get payment details from Razorpay
     let payment;
     try {
       payment = await razorpay.payments.fetch(razorpay_payment_id);
-      console.log('Payment details:', {
+      console.log('✅ Payment details:', {
         id: payment.id,
         status: payment.status,
         amount: payment.amount,
         currency: payment.currency
       });
     } catch (razorpayError) {
-      console.error(' Razorpay payment fetch error:', razorpayError);
+      console.error('❌ Razorpay payment fetch error:', razorpayError);
       await session.abortTransaction();
       await session.endSession();
       return res.status(400).json({
@@ -1916,50 +2035,34 @@ export const validatePayment = async (req, res) => {
       });
     }
 
-    // Get property and user details
-    const [property, user] = await Promise.all([
-      Property.findById(bookingData.propertyId).session(session),
-      User.findById(req.user.id).session(session)
-    ]);
-
-    if (!property) {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(404).json({
-        success: false,
-        message: 'Property not found'
-      });
+    // Validate booking data structure
+    if (!bookingData.selectedRooms || !Array.isArray(bookingData.selectedRooms)) {
+      bookingData.selectedRooms = [];
     }
 
-    if (!user) {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+    if (!bookingData.customerDetails) {
+      bookingData.customerDetails = {};
     }
 
-    // Parse dates safely
-    const moveInDate = new Date(bookingData.moveInDate || bookingData.selectedDate);
-    const moveOutDate = new Date(bookingData.endDate || bookingData.moveOutDate);
-
-    if (isNaN(moveInDate.getTime()) || isNaN(moveOutDate.getTime())) {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid date format'
-      });
+    if (!bookingData.pricing) {
+      bookingData.pricing = {
+        monthlyRent: 0,
+        totalRent: 0,
+        securityDeposit: 0,
+        advanceAmount: 0,
+        totalAmount: amount,
+        maintenanceFee: 0
+      };
     }
 
-    // Check room availability one more time before confirming
-    if (bookingData.selectedRooms && bookingData.selectedRooms.length > 0) {
+    // Check room availability before creating booking
+    console.log('🔍 Checking room availability before creating booking...');
+    try {
       const roomAvailability = await checkRoomAvailabilityBeforeBooking(
         bookingData.propertyId,
-        bookingData.selectedRooms,
-        moveInDate,
-        moveOutDate,
+        bookingData.selectedRooms || [],
+        new Date(bookingData.moveInDate),
+        new Date(bookingData.endDate),
         session
       );
 
@@ -1967,12 +2070,12 @@ export const validatePayment = async (req, res) => {
         await session.abortTransaction();
         await session.endSession();
         
-        // Initiate automatic refund
+        // Initiate automatic refund since rooms are no longer available
         try {
           await razorpay.payments.refund(razorpay_payment_id, {
             amount: payment.amount
           });
-          console.log('Automatic refund initiated due to room unavailability');
+          console.log('💰 Automatic refund initiated due to room unavailability');
         } catch (refundError) {
           console.error('Refund initiation failed:', refundError);
         }
@@ -1984,61 +2087,119 @@ export const validatePayment = async (req, res) => {
           refundInitiated: true
         });
       }
+    } catch (availabilityError) {
+      console.error('❌ Room availability check error:', availabilityError);
+      // Continue with booking creation even if availability check fails
+      // This is a safety measure to not block bookings due to availability check errors
     }
 
-    // Calculate transfer amounts
-    const transferBreakdown = calculateTransferBreakdown(amount);
-
-    // UPDATE EXISTING BOOKING INSTEAD OF CREATING NEW ONE
-    console.log('Looking for existing booking to update...');
-
-    // Find the existing booking that matches the criteria
-    const existingBooking = await Booking.findOne({
-      userId: req.user.id,
-      propertyId: bookingData.propertyId,
-      bookingStatus: 'pending_payment'
-    }).session(session);
-
-    if (!existingBooking) {
+    // Get property details
+    const property = await Property.findById(bookingData.propertyId).session(session);
+    if (!property) {
       await session.abortTransaction();
       await session.endSession();
       return res.status(404).json({
         success: false,
-        message: 'No pending booking found to update'
+        message: 'Property not found'
       });
     }
 
-    console.log('Found existing booking to update:', existingBooking._id);
-
-    // Update the existing booking with payment information
-    existingBooking.paymentInfo = {
-      paymentStatus: 'paid',
-      paymentMethod: 'razorpay',
-      transactionId: razorpay_payment_id,
-      razorpayOrderId: razorpay_order_id,
-      razorpayPaymentId: razorpay_payment_id,
-      razorpaySignature: razorpay_signature,
-      paidAmount: amount,
-      paymentDate: new Date()
-    };
-
-    existingBooking.bookingStatus = 'confirmed';
-    existingBooking.transferStatus = 'manual_pending';
+    // CREATE THE BOOKING IN DATABASE ONLY AFTER SUCCESSFUL PAYMENT
+    console.log('📝 Creating booking in database after successful payment...');
     
-    // Add payment record
-    existingBooking.payments.push({
-      date: new Date(),
-      amount: amount,
-      method: 'razorpay',
-      transactionId: razorpay_payment_id,
-      status: 'completed',
-      description: 'Booking payment'
+    // Process room details safely
+    const roomDetails = (bookingData.selectedRooms || []).map(roomIdentifier => {
+      try {
+        const parts = roomIdentifier.split('-');
+        if (parts.length < 3) {
+          return {
+            roomIdentifier,
+            sharingType: 'unknown',
+            floor: 1,
+            roomNumber: 'unknown',
+            bed: 'unknown'
+          };
+        }
+        
+        const sharingType = parts[0];
+        const roomNumber = parts.slice(1, parts.length - 1).join('-');
+        const bed = parts[parts.length - 1];
+        
+        const consistentIdentifier = createRoomIdentifier(sharingType, roomNumber, bed);
+        
+        return {
+          roomIdentifier: consistentIdentifier,
+          sharingType,
+          floor: 1,
+          roomNumber,
+          bed
+        };
+      } catch (error) {
+        console.error('❌ Error processing room identifier:', roomIdentifier, error);
+        return {
+          roomIdentifier,
+          sharingType: 'unknown',
+          floor: 1,
+          roomNumber: 'unknown',
+          bed: 'unknown'
+        };
+      }
     });
 
-    existingBooking.outstandingAmount = 0;
-    
-    // Update transfer details
-    existingBooking.transferDetails = {
+    const bookingDataToSave = {
+      userId: req.user.id,
+      clientId: property.clientId,
+      propertyId: bookingData.propertyId,
+      roomType: {
+        type: bookingData.roomType || 'single',
+        name: bookingData.roomType || 'Single Room',
+        capacity: parseInt(bookingData.personCount) || 1
+      },
+      roomDetails: roomDetails,
+      moveInDate: new Date(bookingData.moveInDate),
+      moveOutDate: new Date(bookingData.endDate),
+      durationType: bookingData.durationType || 'monthly',
+      durationDays: bookingData.durationDays || null,
+      durationMonths: bookingData.durationMonths || null,
+      personCount: parseInt(bookingData.personCount) || 1,
+      customerDetails: bookingData.customerDetails,
+      pricing: {
+        monthlyRent: bookingData.pricing?.monthlyRent || 0,
+        totalRent: bookingData.pricing?.totalRent || 0,
+        securityDeposit: bookingData.pricing?.securityDeposit || 0,
+        advanceAmount: bookingData.pricing?.advanceAmount || 0,
+        totalAmount: bookingData.pricing?.totalAmount || amount,
+        maintenanceFee: bookingData.pricing?.maintenanceFee || 0
+      },
+      paymentInfo: {
+        paymentStatus: 'paid',
+        paymentMethod: 'razorpay',
+        transactionId: razorpay_payment_id,
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+        paidAmount: amount,
+        paymentDate: new Date(),
+        outstandingAmount: 0
+      },
+      bookingStatus: 'confirmed',
+      transferStatus: 'manual_pending',
+      payments: [{
+        date: new Date(),
+        amount: amount,
+        method: 'razorpay',
+        transactionId: razorpay_payment_id,
+        status: 'completed',
+        description: 'Booking payment',
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature
+      }]
+    };
+
+    // Calculate transfer breakdown
+    const transferBreakdown = calculateTransferBreakdown(amount);
+    bookingDataToSave.transferDetails = {
       totalAmount: amount,
       platformCommission: transferBreakdown.platformCommission,
       gstOnCommission: transferBreakdown.gstOnCommission,
@@ -2049,74 +2210,140 @@ export const validatePayment = async (req, res) => {
       transferNotes: 'Awaiting manual transfer to property owner'
     };
 
-    // Update pricing if needed
-    if (bookingData.pricing) {
-      existingBooking.pricing.totalAmount = amount;
-    }
+    console.log('💾 Saving booking to database:', {
+      propertyId: bookingDataToSave.propertyId,
+      roomType: bookingDataToSave.roomType,
+      roomCount: bookingDataToSave.roomDetails.length,
+      amount: bookingDataToSave.pricing.totalAmount,
+      userId: bookingDataToSave.userId
+    });
 
-    console.log('Updating existing booking with payment info...');
-
-    // Save the updated booking
-    await existingBooking.save({ session });
-
-    console.log('Booking updated successfully:', existingBooking._id);
+    const newBooking = new Booking(bookingDataToSave);
+    await newBooking.save({ session });
 
     await session.commitTransaction();
     await session.endSession();
 
-    // Prepare response
+    console.log('✅ Booking created successfully in database:', newBooking._id);
+
+    // Populate the booking for response
+    const populatedBooking = await Booking.findById(newBooking._id)
+      .populate('propertyId', 'name locality city images')
+      .populate('userId', 'name email');
+
+    // ✅ FIXED: Create notifications BEFORE committing transaction
+    console.log('📧 Creating payment and booking notifications...');
+    
+    try {
+      // Create payment success notification for user
+      await NotificationService.createPaymentNotification(
+        req.user.id,
+        'payment_received',
+        amount,
+        newBooking._id,
+        {
+          propertyName: property.name,
+          razorpayPaymentId: razorpay_payment_id,
+          bookingId: newBooking._id
+        }
+      );
+      console.log('💰 Payment success notification created for user');
+
+      // Create booking paid notification for client and admin
+      await NotificationService.createBookingNotification(
+        newBooking,
+        'paid',
+        {
+          amount: amount,
+          razorpayPaymentId: razorpay_payment_id
+        }
+      );
+      console.log('📦 Booking paid notification created for client and admin');
+    } catch (notificationError) {
+      console.error('❌ Failed to create payment notifications:', notificationError);
+      // Don't fail the payment if notifications fail, but log it
+    }
+
+    // Prepare comprehensive response
     const response = {
       success: true,
-      message: 'Payment verified and booking confirmed successfully',
+      message: 'Payment verified and booking created successfully',
       paymentId: razorpay_payment_id,
       orderId: razorpay_order_id,
       booking: {
-        id: existingBooking._id,
-        propertyId: existingBooking.propertyId,
-        propertyName: property.name,
-        roomType: existingBooking.roomType?.name || 'Unknown',
-        rooms: existingBooking.roomDetails,
-        moveInDate: existingBooking.moveInDate,
-        moveOutDate: existingBooking.moveOutDate,
-        durationType: existingBooking.durationType,
-        durationDays: existingBooking.durationDays,
-        durationMonths: existingBooking.durationMonths,
-        status: existingBooking.bookingStatus,
-        paymentStatus: existingBooking.paymentInfo.paymentStatus,
-        transferStatus: existingBooking.transferStatus,
-        totalAmount: existingBooking.pricing.totalAmount,
-        customerDetails: existingBooking.customerDetails
+        id: populatedBooking._id,
+        propertyId: populatedBooking.propertyId?._id || populatedBooking.propertyId,
+        propertyName: populatedBooking.propertyId?.name || 'Unknown Property',
+        propertyLocality: populatedBooking.propertyId?.locality || '',
+        propertyCity: populatedBooking.propertyId?.city || '',
+        propertyImages: populatedBooking.propertyId?.images || [],
+        roomType: populatedBooking.roomType?.name || 'Unknown',
+        rooms: populatedBooking.roomDetails || [],
+        moveInDate: populatedBooking.moveInDate,
+        moveOutDate: populatedBooking.moveOutDate,
+        durationType: populatedBooking.durationType,
+        durationDays: populatedBooking.durationDays,
+        durationMonths: populatedBooking.durationMonths,
+        status: populatedBooking.bookingStatus,
+        paymentStatus: populatedBooking.paymentInfo.paymentStatus,
+        transferStatus: populatedBooking.transferStatus,
+        totalAmount: populatedBooking.pricing.totalAmount,
+        customerDetails: populatedBooking.customerDetails,
+        personCount: populatedBooking.personCount,
+        createdAt: populatedBooking.createdAt
+      },
+      paymentDetails: {
+        amount: amount,
+        currency: 'INR',
+        transactionId: razorpay_payment_id,
+        paymentDate: new Date()
       },
       transferInitiated: false,
-      transferDetails: existingBooking.transferDetails
+      transferDetails: populatedBooking.transferDetails
     };
 
-    console.log('🎉 Payment validation completed successfully');
+    console.log('🎉 Payment validation and booking creation completed successfully');
+
     return res.status(200).json(response);
 
   } catch (error) {
-    // Safe transaction cleanup
+    // Enhanced error handling
     try {
-      if (session.inTransaction()) {
+      if (session && session.inTransaction()) {
         await session.abortTransaction();
       }
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     } catch (sessionError) {
       console.error('Session cleanup error:', sessionError);
     }
-    
-    console.error('❌ Payment validation error:', error);
-    
-    let errorMessage = 'Payment validation failed';
-    if (error.message.includes('validation failed')) {
+
+    console.error('❌ Payment validation and booking creation error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+
+    // More specific error messages
+    let errorMessage = 'Payment validation and booking creation failed';
+    let statusCode = 500;
+
+    if (error.name === 'ValidationError') {
       errorMessage = 'Data validation error. Please check your booking information.';
-    } else if (error.message.includes('duplicate key')) {
-      errorMessage = 'Booking already exists with these details.';
+      statusCode = 400;
+    } else if (error.name === 'CastError') {
+      errorMessage = 'Invalid data format.';
+      statusCode = 400;
     } else if (error.message.includes('razorpay')) {
       errorMessage = 'Payment gateway error. Please try again.';
+      statusCode = 400;
+    } else if (error.message.includes('validation failed')) {
+      errorMessage = 'Booking data validation failed. Please check all required fields.';
+      statusCode = 400;
     }
-    
-    return res.status(500).json({
+
+    return res.status(statusCode).json({
       success: false,
       message: errorMessage,
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -2124,7 +2351,546 @@ export const validatePayment = async (req, res) => {
   }
 };
 
+
+// Validate payment and update booking
+
+// export const validatePayment = async (req, res) => {
+//   const session = await mongoose.startSession();
+  
+//   try {
+//     await session.startTransaction();
+    
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       bookingData
+//     } = req.body;
+
+//     console.log('Validating payment...', {
+//       order_id: razorpay_order_id,
+//       payment_id: razorpay_payment_id
+//     });
+
+//     // Validate required fields
+//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Missing payment verification data'
+//       });
+//     }
+
+//     if (!bookingData || !bookingData.propertyId) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Complete booking data with property ID is required'
+//       });
+//     }
+
+//     // Verify payment signature
+//     const body = razorpay_order_id + "|" + razorpay_payment_id;
+//     const expectedSignature = crypto
+//       .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+//       .update(body)
+//       .digest('hex');
+
+//     console.log(' Signature verification:', {
+//       expected: expectedSignature,
+//       received: razorpay_signature
+//     });
+
+//     if (expectedSignature !== razorpay_signature) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Payment verification failed - invalid signature'
+//       });
+//     }
+
+//     console.log(' Payment signature verified');
+
+//     // Get payment details from Razorpay
+//     let payment;
+//     try {
+//       payment = await razorpay.payments.fetch(razorpay_payment_id);
+//       console.log('Payment details:', {
+//         id: payment.id,
+//         status: payment.status,
+//         amount: payment.amount,
+//         currency: payment.currency
+//       });
+//     } catch (razorpayError) {
+//       console.error(' Razorpay payment fetch error:', razorpayError);
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Failed to fetch payment details from Razorpay'
+//       });
+//     }
+
+//     if (payment.status !== 'captured') {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Payment not captured successfully'
+//       });
+//     }
+
+//     const amount = payment.amount / 100; // Convert from paise to rupees
+
+//     // Validate user authentication
+//     if (!req.user || !req.user.id) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(401).json({
+//         success: false,
+//         message: 'User authentication required'
+//       });
+//     }
+
+//     // Get property and user details
+//     const [property, user] = await Promise.all([
+//       Property.findById(bookingData.propertyId).session(session),
+//       User.findById(req.user.id).session(session)
+//     ]);
+
+//     if (!property) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Property not found'
+//       });
+//     }
+
+//     if (!user) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(404).json({
+//         success: false,
+//         message: 'User not found'
+//       });
+//     }
+
+//     // Parse dates safely
+//     const moveInDate = new Date(bookingData.moveInDate || bookingData.selectedDate);
+//     const moveOutDate = new Date(bookingData.endDate || bookingData.moveOutDate);
+
+//     if (isNaN(moveInDate.getTime()) || isNaN(moveOutDate.getTime())) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid date format'
+//       });
+//     }
+
+//     // Check room availability one more time before confirming
+//     if (bookingData.selectedRooms && bookingData.selectedRooms.length > 0) {
+//       const roomAvailability = await checkRoomAvailabilityBeforeBooking(
+//         bookingData.propertyId,
+//         bookingData.selectedRooms,
+//         moveInDate,
+//         moveOutDate,
+//         session
+//       );
+
+//       if (!roomAvailability.available) {
+//         await session.abortTransaction();
+//         await session.endSession();
+        
+//         // Initiate automatic refund
+//         try {
+//           await razorpay.payments.refund(razorpay_payment_id, {
+//             amount: payment.amount
+//           });
+//           console.log('Automatic refund initiated due to room unavailability');
+//         } catch (refundError) {
+//           console.error('Refund initiation failed:', refundError);
+//         }
+        
+//         return res.status(409).json({
+//           success: false,
+//           message: 'Selected rooms are no longer available. Your payment has been refunded.',
+//           unavailableRooms: roomAvailability.unavailableRooms,
+//           refundInitiated: true
+//         });
+//       }
+//     }
+
+//     // Calculate transfer amounts
+//     const transferBreakdown = calculateTransferBreakdown(amount);
+
+//     // UPDATE EXISTING BOOKING INSTEAD OF CREATING NEW ONE
+//     console.log('Looking for existing booking to update...');
+
+//     // Find the existing booking that matches the criteria
+//     const existingBooking = await Booking.findOne({
+//       userId: req.user.id,
+//       propertyId: bookingData.propertyId,
+//       bookingStatus: 'pending_payment'
+//     }).session(session);
+
+//     if (!existingBooking) {
+//       await session.abortTransaction();
+//       await session.endSession();
+//       return res.status(404).json({
+//         success: false,
+//         message: 'No pending booking found to update'
+//       });
+//     }
+
+//     console.log('Found existing booking to update:', existingBooking._id);
+
+//     // Update the existing booking with payment information
+//     existingBooking.paymentInfo = {
+//       paymentStatus: 'paid',
+//       paymentMethod: 'razorpay',
+//       transactionId: razorpay_payment_id,
+//       razorpayOrderId: razorpay_order_id,
+//       razorpayPaymentId: razorpay_payment_id,
+//       razorpaySignature: razorpay_signature,
+//       paidAmount: amount,
+//       paymentDate: new Date()
+//     };
+
+//     existingBooking.bookingStatus = 'confirmed';
+//     existingBooking.transferStatus = 'manual_pending';
+    
+//     // Add payment record
+//     existingBooking.payments.push({
+//       date: new Date(),
+//       amount: amount,
+//       method: 'razorpay',
+//       transactionId: razorpay_payment_id,
+//       status: 'completed',
+//       description: 'Booking payment'
+//     });
+
+//     existingBooking.outstandingAmount = 0;
+    
+//     // Update transfer details
+//     existingBooking.transferDetails = {
+//       totalAmount: amount,
+//       platformCommission: transferBreakdown.platformCommission,
+//       gstOnCommission: transferBreakdown.gstOnCommission,
+//       totalPlatformEarnings: transferBreakdown.totalPlatformEarnings,
+//       clientAmount: transferBreakdown.clientAmount,
+//       clientTransferStatus: 'pending',
+//       breakdown: transferBreakdown.breakdown,
+//       transferNotes: 'Awaiting manual transfer to property owner'
+//     };
+
+//     // Update pricing if needed
+//     if (bookingData.pricing) {
+//       existingBooking.pricing.totalAmount = amount;
+//     }
+
+//     console.log('Updating existing booking with payment info...');
+
+//     // Save the updated booking
+//     await existingBooking.save({ session });
+
+//     console.log('Booking updated successfully:', existingBooking._id);
+
+//     await session.commitTransaction();
+//     await session.endSession();
+
+//     // Prepare response
+//     const response = {
+//       success: true,
+//       message: 'Payment verified and booking confirmed successfully',
+//       paymentId: razorpay_payment_id,
+//       orderId: razorpay_order_id,
+//       booking: {
+//         id: existingBooking._id,
+//         propertyId: existingBooking.propertyId,
+//         propertyName: property.name,
+//         roomType: existingBooking.roomType?.name || 'Unknown',
+//         rooms: existingBooking.roomDetails,
+//         moveInDate: existingBooking.moveInDate,
+//         moveOutDate: existingBooking.moveOutDate,
+//         durationType: existingBooking.durationType,
+//         durationDays: existingBooking.durationDays,
+//         durationMonths: existingBooking.durationMonths,
+//         status: existingBooking.bookingStatus,
+//         paymentStatus: existingBooking.paymentInfo.paymentStatus,
+//         transferStatus: existingBooking.transferStatus,
+//         totalAmount: existingBooking.pricing.totalAmount,
+//         customerDetails: existingBooking.customerDetails
+//       },
+//       transferInitiated: false,
+//       transferDetails: existingBooking.transferDetails
+//     };
+
+//     console.log('🎉 Payment validation completed successfully');
+
+// // ✅ FIXED: Create payment and booking notifications
+//     try {
+//       // Create payment notification for user
+//       await NotificationService.createPaymentNotification(
+//         req.user.id,
+//         'payment_received',
+//         amount,
+//         existingBooking._id,
+//         {
+//           propertyName: property.name,
+//           razorpayPaymentId: razorpay_payment_id,
+//           bookingId: existingBooking._id
+//         }
+//       );
+//       console.log('💰 Payment notification created for user');
+
+//       // Create booking paid notification for client and admin
+//       await NotificationService.createBookingNotification(
+//         existingBooking,
+//         'booking_paid',
+//         {
+//           amount: amount,
+//           razorpayPaymentId: razorpay_payment_id
+//         }
+//       );
+//       console.log('📦 Booking paid notification created for client and admin');
+//     } catch (notificationError) {
+//       console.error('❌ Failed to create payment notifications:', notificationError);
+//       // Don't fail the payment if notifications fail
+//     }
+
+//     return res.status(200).json(response);
+
+    
+
+//   } catch (error) {
+//     // Safe transaction cleanup
+//     try {
+//       if (session.inTransaction()) {
+//         await session.abortTransaction();
+//       }
+//       await session.endSession();
+//     } catch (sessionError) {
+//       console.error('Session cleanup error:', sessionError);
+//     }
+    
+//     console.error('❌ Payment validation error:', error);
+    
+//     let errorMessage = 'Payment validation failed';
+//     if (error.message.includes('validation failed')) {
+//       errorMessage = 'Data validation error. Please check your booking information.';
+//     } else if (error.message.includes('duplicate key')) {
+//       errorMessage = 'Booking already exists with these details.';
+//     } else if (error.message.includes('razorpay')) {
+//       errorMessage = 'Payment gateway error. Please try again.';
+//     }
+    
+//     return res.status(500).json({
+//       success: false,
+//       message: errorMessage,
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
+//   }
+// };
+
 // Get payment details
+// Validate payment and update booking
+
+// Validate payment and update booking
+// export const validatePayment = async (req, res) => {
+//   let session;
+  
+//   try {
+//     session = await mongoose.startSession();
+    
+//     const { 
+//       razorpay_order_id, 
+//       razorpay_payment_id, 
+//       razorpay_signature, 
+//       bookingData 
+//     } = req.body;
+
+//     console.log('🔍 Starting payment validation...', {
+//       order_id: razorpay_order_id,
+//       payment_id: razorpay_payment_id,
+//       has_booking_data: !!bookingData,
+//       booking_id: bookingData?.bookingId
+//     });
+
+//     // Validate required fields
+//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Missing payment verification data'
+//       });
+//     }
+
+//     if (!bookingData?.propertyId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Complete booking data with property ID is required'
+//       });
+//     }
+
+//     // Verify payment signature
+//     const body = razorpay_order_id + "|" + razorpay_payment_id;
+//     const expectedSignature = crypto
+//       .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+//       .update(body)
+//       .digest('hex');
+
+//     console.log('🔐 Signature verification:', {
+//       expected_length: expectedSignature.length,
+//       received_length: razorpay_signature.length,
+//       match: expectedSignature === razorpay_signature
+//     });
+
+//     if (expectedSignature !== razorpay_signature) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Payment verification failed - invalid signature'
+//       });
+//     }
+
+//     console.log('✅ Payment signature verified');
+
+//     // Get payment details from Razorpay
+//     let payment;
+//     try {
+//       payment = await razorpay.payments.fetch(razorpay_payment_id);
+//       console.log('✅ Payment details:', {
+//         id: payment.id,
+//         status: payment.status,
+//         amount: payment.amount,
+//         currency: payment.currency
+//       });
+//     } catch (razorpayError) {
+//       console.error('❌ Razorpay payment fetch error:', razorpayError);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Failed to fetch payment details from Razorpay'
+//       });
+//     }
+
+//     if (payment.status !== 'captured') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Payment not captured successfully'
+//       });
+//     }
+
+//     const amount = payment.amount / 100; // Convert from paise to rupees
+
+//     // Validate user authentication
+//     if (!req.user || !req.user.id) {
+//       return res.status(401).json({
+//         success: false,
+//         message: 'User authentication required'
+//       });
+//     }
+
+//     // Check if booking exists and belongs to user
+//     let booking;
+//     if (bookingData.bookingId) {
+//       booking = await Booking.findOne({
+//         _id: bookingData.bookingId,
+//         userId: req.user.id
+//       });
+
+//       if (!booking) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Booking not found or does not belong to user'
+//         });
+//       }
+//     }
+
+//     // Prepare payment data
+//     const paymentData = {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       amount: amount
+//     };
+
+//     // Update booking with payment information
+//     console.log('🔄 Updating booking with payment information...');
+//     const updatedBooking = await updateBookingAfterPayment(
+//       bookingData.bookingId, 
+//       paymentData, 
+//       bookingData
+//     );
+
+//     // Prepare response
+//     const response = {
+//       success: true,
+//       message: 'Payment verified and booking confirmed successfully',
+//       paymentId: razorpay_payment_id,
+//       orderId: razorpay_order_id,
+//       booking: {
+//         id: updatedBooking._id,
+//         propertyId: updatedBooking.propertyId._id,
+//         propertyName: updatedBooking.propertyId.name,
+//         roomType: updatedBooking.roomType?.name || 'Unknown',
+//         rooms: updatedBooking.roomDetails,
+//         moveInDate: updatedBooking.moveInDate,
+//         moveOutDate: updatedBooking.moveOutDate,
+//         durationType: updatedBooking.durationType,
+//         durationDays: updatedBooking.durationDays,
+//         durationMonths: updatedBooking.durationMonths,
+//         status: updatedBooking.bookingStatus,
+//         paymentStatus: updatedBooking.paymentInfo.paymentStatus,
+//         transferStatus: updatedBooking.transferStatus,
+//         totalAmount: updatedBooking.pricing.totalAmount,
+//         customerDetails: updatedBooking.customerDetails,
+//         createdAt: updatedBooking.createdAt
+//       },
+//       transferInitiated: false,
+//       transferDetails: updatedBooking.transferDetails
+//     };
+
+//     console.log('🎉 Payment validation completed successfully');
+
+//     return res.status(200).json(response);
+
+//   } catch (error) {
+//     // Enhanced error handling
+//     console.error('❌ Payment validation error:', {
+//       message: error.message,
+//       stack: error.stack,
+//       name: error.name
+//     });
+
+//     // More specific error messages
+//     let errorMessage = 'Payment validation failed';
+//     let statusCode = 500;
+
+//     if (error.name === 'ValidationError') {
+//       errorMessage = 'Data validation error. Please check your booking information.';
+//       statusCode = 400;
+//     } else if (error.name === 'CastError') {
+//       errorMessage = 'Invalid data format.';
+//       statusCode = 400;
+//     } else if (error.message.includes('Booking not found')) {
+//       errorMessage = 'Booking not found. Please create a booking first.';
+//       statusCode = 404;
+//     } else if (error.message.includes('razorpay')) {
+//       errorMessage = 'Payment gateway error. Please try again.';
+//       statusCode = 400;
+//     }
+
+//     return res.status(statusCode).json({
+//       success: false,
+//       message: errorMessage,
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
+//   }
+// };
+
 export const getPaymentDetails = async (req, res) => {
   try {
     const { paymentId } = req.params;
@@ -2153,6 +2919,7 @@ export const getPaymentDetails = async (req, res) => {
 };
 
 // Refund payment
+// Refund payment with notifications
 export const refundPayment = async (req, res) => {
   try {
     const { paymentId, amount, bookingId } = req.body;
@@ -2171,13 +2938,33 @@ export const refundPayment = async (req, res) => {
     // Update booking status if refund is successful and bookingId is provided
     if (bookingId) {
       try {
-        await Booking.findByIdAndUpdate(
+        const updatedBooking = await Booking.findByIdAndUpdate(
           bookingId,
           {
             'paymentInfo.paymentStatus': 'refunded',
             'bookingStatus': 'cancelled'
+          },
+          { new: true }
+        ).populate('userId', 'name email');
+
+        // Create refund notification
+        if (updatedBooking && updatedBooking.userId) {
+          try {
+            await NotificationService.createPaymentNotification(
+              updatedBooking.userId._id,
+              'payment_refunded',
+              amount || updatedBooking.pricing.totalAmount,
+              bookingId,
+              {
+                refundId: refund.id,
+                bookingId: bookingId
+              }
+            );
+            console.log('💰 Refund notification created for user');
+          } catch (notificationError) {
+            console.error('❌ Failed to create refund notification:', notificationError);
           }
-        );
+        }
       } catch (updateError) {
         console.error('Error updating booking status during refund:', updateError);
       }

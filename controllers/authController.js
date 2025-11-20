@@ -8,6 +8,7 @@ import multer from 'multer';
 import { cloudinary } from "../config/cloudinaryConfig.js";
 import crypto from 'crypto';
 import admin from './../config/firebase.js';
+import Admin from "../models/Admin.js";
 // Helper function to delete uploaded files on error
 
 const cleanupCloudinaryUpload = async (publicId) => {
@@ -20,164 +21,7 @@ const cleanupCloudinaryUpload = async (publicId) => {
   }
 };
 
-// export const checkUserExists = async (req, res) => {
-//   const { phone } = req.body;
 
-//   if (!phone) {
-//     return res.status(400).json({ 
-//       success: false, 
-//       message: "Phone number is required" 
-//     });
-//   }
-
-//   try {
-//     const user = await User.findOne({ phone });
-
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Phone number not registered. Please register first."
-//       });
-//     }
-
-//     if (user.role !== 'client') {
-//       return res.status(403).json({
-//         success: false,
-//         message: "Access denied. Client login only."
-//       });
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "User found. You can proceed with OTP verification.",
-//       user: {
-//         id: user._id,
-//         name: user.name,
-//         phone: user.phone,
-//         location: user.location,
-//         clientId: user.clientId,
-//         role: user.role
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('Check user error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to check user",
-//       error: error.message
-//     });
-//   }
-// };
-
-// export const verifyFirebaseOTP = async (req, res) => {
-//   const { idToken } = req.body;
-
-//   console.log("=== FIREBASE OTP VERIFICATION START ===");
-
-//   try {
-//     if (!idToken) {
-//       console.log("ERROR: No ID token provided");
-//       return res.status(400).json({
-//         success: false,
-//         message: "ID token is required"
-//       });
-//     }
-
-//     console.log("ID token received, verifying...");
-
-//     // Verify Firebase ID token
-//     let decodedToken;
-//     try {
-//       decodedToken = await admin.auth().verifyIdToken(idToken);
-//       console.log("✅ Token verified successfully");
-//     } catch (verifyError) {
-//       console.error("❌ Token verification failed:", verifyError);
-      
-//       return res.status(401).json({
-//         success: false,
-//         message: "Token verification failed",
-//         error: verifyError.message,
-//         code: verifyError.code
-//       });
-//     }
-
-//     console.log("Decoded token phone:", decodedToken.phone_number);
-
-//     const phoneNumber = decodedToken.phone_number;
-//     const phoneDigits = phoneNumber.replace(/\D/g, '').slice(-10);
-//     console.log("Extracted phone digits:", phoneDigits);
-
-//     // Find user in database - use lean() to avoid Mongoose document
-//     const user = await User.findOne({ phone: phoneDigits }).lean();
-//     console.log("User found:", user ? `${user.phone} (${user.role})` : "NOT FOUND");
-
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "User not found. Please register first."
-//       });
-//     }
-
-//     // Check if user is a client
-//     if (user.role !== 'client') {
-//       return res.status(403).json({
-//         success: false,
-//         message: "Access denied. Client login only."
-//       });
-//     }
-
-//     // Update last login WITHOUT using save() to avoid validation
-//     await User.updateOne(
-//       { _id: user._id }, 
-//       { 
-//         $set: { 
-//           lastLogin: new Date()
-//         } 
-//       }
-//     );
-
-//     // Generate JWT token
-//     const token = generateToken(user);
-
-//     console.log("=== FIREBASE OTP VERIFICATION SUCCESS ===");
-
-//     return res.status(200).json({
-//       success: true,
-//       message: 'Login successful',
-//       token,
-//       user: {
-//         id: user._id,
-//         name: user.name,
-//         phone: user.phone,
-//         location: user.location,
-//         clientId: user.clientId,
-//         role: user.role
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error("=== FIREBASE OTP VERIFICATION ERROR ===");
-//     console.error("Unexpected error:", error);
-
-//     // Handle specific validation errors
-//     if (error.name === 'ValidationError') {
-//       return res.status(400).json({
-//         success: false,
-//         message: "User profile incomplete. Please complete your profile.",
-//         error: error.message
-//       });
-//     }
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "OTP verification failed",
-//       error: error.message
-//     });
-//   }
-// };
-
-// Health check endpoint
 
 
 // Check user exists for both client and user
@@ -423,64 +267,7 @@ export const sendOTP = async (req, res) => {
   }
 };
 
-// const otpStore = new Map();
 
-// Helper function to generate OTP
-// const generateOTP = () => {
-//   return crypto.randomInt(100000, 999999).toString();
-// };
-
-// export const sendOTP = async (req, res) => {
-//   const { phone } = req.body;
-
-//   if (!phone) {
-//     return res.status(400).json({ 
-//       success: false, 
-//       message: "Phone number is required" 
-//     });
-//   }
-
-//   try {
-//     const user = await User.findOne({ phone });
-
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Phone number not registered. Please register first."
-//       });
-//     }
-
-//     // Generate OTP
-//     const otp = generateOTP();
-//     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-//     // Store OTP
-//     otpStore.set(phone, { otp, expiresAt });
-
-//     // TODO: Integrate with SMS service (Twilio, MSG91, etc.)
-//     console.log(`OTP for ${phone}: ${otp}`); // Remove this in production
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "OTP sent successfully",
-//       user: {
-//         id: user._id,
-//         name: user.name,
-//         phone: user.phone,
-//         location: user.location,
-//         clientId: user.clientId,
-//         role: user.role
-//       }
-//     });
-
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to process OTP request",
-//       error: error.message
-//     });
-//   }
-// };
 export const verifyOTP = async (req, res) => {
   const { phone, otp } = req.body;
 

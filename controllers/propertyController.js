@@ -5,6 +5,7 @@ import Room from "../models/Room.js";
 import Admin from "../models/Admin.js";
 import User from "../models/User.js";
 import mongoose from "mongoose";
+import { NotificationService } from "../controllers/notificationController.js";
 
 
 
@@ -48,6 +49,49 @@ export const registerProperty = async (req, res) => {
       location: location || { type: 'Point', coordinates: [0, 0] }
     });
 
+    // ✅ Create notifications for client and admin - FIXED
+    try {
+      // Get client user details for notification
+      const clientUser = await User.findOne({ clientId });
+      
+      if (clientUser) {
+        // Create notification for client
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: clientId,
+          propertyId: property._id,
+          type: 'property_submitted',
+          title: 'Property Submitted Successfully',
+          message: `Your property "${property.name}" has been submitted for admin approval.`,
+          priority: 'medium',
+          metadata: {
+            propertyId: property._id,
+            propertyName: property.name,
+            action: 'submitted'
+          }
+        });
+      }
+
+      // Create notification for admin - FIXED: Use consistent adminId
+      await NotificationService.createNotification({
+        adminId: 'admin', // Consistent adminId
+        type: 'property_submitted',
+        title: 'New Property Submitted for Approval',
+        message: `New property "${property.name}" has been submitted by client ${clientId}.`,
+        priority: 'high',
+        metadata: {
+          propertyId: property._id,
+          propertyName: property.name,
+          clientId: clientId,
+          action: 'submitted'
+        }
+      });
+
+      console.log('✅ Notifications created for property submission');
+    } catch (notificationError) {
+      console.error('❌ Error creating notifications:', notificationError);
+    }
+
     res.status(201).json({ success: true, data: property });
 
   } catch (error) {
@@ -56,113 +100,7 @@ export const registerProperty = async (req, res) => {
   }
 };
 
-// export const getProperty = async (req, res) => {
-//   try {
-//     // For user-specific properties, use this:
-//     // const { clientId } = req.user;
-//     // const filter = { clientId };
-    
-//     // For all properties (admin):
-//     const filter = {}; 
 
-//     // Get all properties with basic info
-//     const properties = await Property.find(filter)
-//       .select('-__v') // Exclude version key
-//       .sort({ createdAt: -1 }) // Newest first
-//       .lean();
-
-//     if (!properties || properties.length === 0) {
-//       return res.status(200).json({
-//         success: true,
-//         data: [],
-//         message: "No properties found"
-//       });
-//     }
-
-//     // Format the response to match your example
-//     const formattedProperties = properties.map(property => ({
-//       success: true,
-//       property: {
-//         location: property.location || {
-//           type: "Point",
-//           coordinates: [0, 0]
-//         },
-//         _id: property._id,
-//         propertyId: property.propertyId,
-//         clientId: property.clientId,
-//         city: property.city,
-//         name: property.name,
-//         locality: property.locality,
-//         street: property.street,
-//         registrationId: property.registrationId,
-//         gstNo: property.gstNo,
-//         cgstNo: property.cgstNo,
-//         sgstNo: property.sgstNo,
-//         status: property.status || "pending",
-//         createdAt: property.createdAt,
-//         updatedAt: property.updatedAt
-//       }
-//     }));
-
-//     res.status(200).json({
-//       success: true,
-//       count: formattedProperties.length,
-//       data: formattedProperties
-//     });
-
-//   } catch (error) {
-//     console.error("Error fetching properties:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch properties",
-//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//     });
-//   }
-// };
-
-
-
-
-// export const getProperty = async (req, res) => {
-//   try {
-//     const { clientId } = req.user;
-
-//     const property = await Property.findOne({ clientId })
-//       .populate('media')
-//       .populate('rooms')
-//       .populate('amenities');
-
-//     if (!property) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Property not found",
-//       });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       property: {
-//         id: property._id,
-//         title: property.propertyName,
-//         address: property.address,
-//         price: property.startingPrice,
-//         rating: property.rating,
-//         amenities: property.amenities.length,
-//         images: property.media.filter(m => m.type === 'image').map(m => m.url),
-//         description: property.description,
-//         roomTypes: property.rooms,
-//         // Add other properties as needed
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error fetching property:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch property",
-//       error: error.message,
-//     });
-//   }
-// };
 
 export const getProperty = async (req, res) => {
   try {
@@ -232,118 +170,7 @@ export const getProperty = async (req, res) => {
   }
 };
 
-// export const updateProperty = async (req, res) => {
-//   try {
-//     const { clientId } = req.user;
-//     const updates = req.body;
 
-//     if (!clientId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Client ID is required"
-//       });
-//     }
-
-//     // Find the existing property
-//     const existingProperty = await Property.findOne({ clientId });
-//     if (!existingProperty) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Property not found"
-//       });
-//     }
-
-//     // Check for duplicate registration ID if it's being updated
-//     // if (updates.registrationId && updates.registrationId === existingProperty.registrationId) {
-//     //   const propertyWithSameRegId = await Property.findOne({
-//     //     registrationId: updates.registrationId,
-//     //     _id: { $ne: existingProperty._id } // Exclude current property
-//     //   });
-
-//     //   if (propertyWithSameRegId) {
-//     //     return res.status(409).json({
-//     //       success: false,
-//     //       message: "Registration ID already exists"
-//     //     });
-//     //   }
-//     // }
-
-//     // Prepare the update object
-//     const updateData = { ...updates, updatedAt: new Date() };
-
-//     // Handle location updates
-//     if (updateData.location) {
-//       if (updateData.location.coordinates) {
-//         updateData.location = {
-//           type: 'Point',
-//           coordinates: [
-//             parseFloat(updateData.location.coordinates[0]) || existingProperty.location?.coordinates[0] || 0,
-//             parseFloat(updateData.location.coordinates[1]) || existingProperty.location?.coordinates[1] || 0
-//           ]
-//         };
-//       } else if (existingProperty.location) {
-//         updateData.location = existingProperty.location;
-//       }
-//     }
-
-//     // Remove undefined values
-//     Object.keys(updateData).forEach(key => {
-//       if (updateData[key] === undefined) {
-//         delete updateData[key];
-//       }
-//     });
-
-//     // Perform the update
-//     const updatedProperty = await Property.findOneAndUpdate(
-//       { clientId },
-//       { $set: updateData },
-//       { 
-//         new: true,
-//         runValidators: true
-//       }
-//     );
-
-//     if (!updatedProperty) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Property not found after update"
-//       });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       message: "Property updated successfully",
-//       property: updatedProperty
-//     });
-
-//   } catch (error) {
-//     console.error("Error updating property:", error);
-    
-//     // Handle duplicate key errors (MongoDB E11000 error)
-//     if (error.code === 11000) {
-//       return res.status(409).json({
-//         success: false,
-//         message: "Duplicate key error",
-//         error: error.message
-//       });
-//     }
-
-//     // Handle validation errors
-//     if (error.name === 'ValidationError') {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Validation failed",
-//         error: error.message
-//       });
-//     }
-
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to update property",
-//       error: error.message
-//     });
-//   }
-// };
 
 //get the completye property data including PGProperty and Media
 export const updateProperty = async (req, res) => {
@@ -659,92 +486,7 @@ export const getAllClientProperties = async (req, res) => {
   }
 };
 
-// export const getAllClientProperties = async (req, res) => {
-//   try {
-   
 
-//     const properties = await Property.find({}); // Find all properties
-
-//     if (!properties || properties.length === 0) {
-//       return res.status(200).json({ // 200 OK with empty array for no properties
-//         success: true,
-//         message: "No properties found in the system.",
-//         data: []
-//       });
-//     }
-
-//     // Fetch all related data for each property concurrently, just like in getCompletePropertyData
-//     const completePropertiesData = await Promise.all(properties.map(async (prop) => {
-//       const [pgProperty, media, roomData] = await Promise.all([
-//         PGProperty.findOne({ propertyId: prop._id }),
-//         Media.findOne({ propertyId: prop._id }),
-//         Room.findOne({ propertyId: prop._id })
-//       ]);
-
-//       const formattedRoomTypes = roomData?.roomTypes?.map(roomType => ({
-//         _id: roomType._id,
-//         type: roomType.type,
-//         label: roomType.label,
-//         capacity: roomType.capacity,
-//         availableCount: roomType.availableCount,
-//         price: roomType.price,
-//         deposit: roomType.deposit,
-//         amenities: roomType.amenities,
-//         images: roomType.images
-//       })) || [];
-
-//       const formattedFloorConfig = roomData?.floorConfig ? {
-//         selectedRooms: roomData.floorConfig.selectedRooms,
-//         floors: roomData.floorConfig.floors
-//       } : null;
-
-//       return {
-//         property: {
-//           _id: prop._id,
-//           clientId: prop.clientId, // Include clientId so admin knows who owns it
-//           city: prop.city,
-//           name: prop.name,
-//           locality: prop.locality,
-//           street: prop.street,
-//           registrationId: prop.registrationId,
-//           gstNo: prop.gstNo,
-//           cgstNo: prop.cgstNo,
-//           sgstNo: prop.sgstNo,
-//           location: prop.location,
-//           status: prop.status, // Admins will need to see the status
-//           approvedBy: prop.approvedBy,
-//           rejectedBy: prop.rejectedBy,
-//           rejectionReason: prop.rejectionReason,
-//           revisionNotes: prop.revisionNotes,
-//           createdAt: prop.createdAt,
-//           updatedAt: prop.updatedAt
-//         },
-//         pgProperty: pgProperty || null,
-//         media: media || { images: [], videos: [] },
-//         rooms: {
-//           roomTypes: formattedRoomTypes,
-//           floorConfig: formattedFloorConfig,
-//           createdAt: roomData?.createdAt,
-//           updatedAt: roomData?.updatedAt
-//         }
-//       };
-//     }));
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "All properties fetched successfully for admin.",
-//       data: completePropertiesData
-//     });
-
-//   } catch (error) {
-//     console.error("Error fetching all properties for admin:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch properties for admin.",
-//       error: error.message
-//     });
-//   }
-// };
 
 // Approve property with enhanced functionality
 // Enhanced approve property function
@@ -816,6 +558,47 @@ export const approveProperty = async (req, res) => {
       { new: true, runValidators: true }
     ).populate('approvedBy', 'name email');
 
+   // ✅ Create notifications for property approval - FIXED
+    try {
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          propertyId: property._id,
+          type: 'property_approved',
+          title: 'Property Approved!',
+          message: `Congratulations! Your property "${property.name}" has been approved and is now live.`,
+          priority: 'high',
+          metadata: {
+            propertyId: property._id,
+            propertyName: property.name,
+            action: 'approved'
+          }
+        });
+      }
+
+      // Create admin notification - FIXED: Use consistent adminId
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'property_approved',
+        title: 'Property Approved',
+        message: `Property "${property.name}" has been approved.`,
+        priority: 'high',
+        metadata: {
+          propertyId: property._id,
+          propertyName: property.name,
+          clientId: property.clientId,
+          action: 'approved'
+        }
+      });
+
+      console.log('✅ Notifications created for property approval');
+    } catch (notificationError) {
+      console.error('❌ Error creating approval notifications:', notificationError);
+    }
+
     // Here you would typically:
     // 1. Send approval notification to client
     // 2. Log the approval action
@@ -883,6 +666,49 @@ export const rejectProperty = async (req, res) => {
       { new: true, runValidators: true }
     ).populate('rejectedBy', 'name email');
 
+  // ✅ Create notifications for property rejection - FIXED
+    try {
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          propertyId: property._id,
+          type: 'property_rejected',
+          title: 'Property Rejected',
+          message: `Your property "${property.name}" was rejected. Reason: ${rejectionReason}`,
+          priority: 'high',
+          metadata: {
+            propertyId: property._id,
+            propertyName: property.name,
+            action: 'rejected',
+            rejectionReason: rejectionReason
+          }
+        });
+      }
+
+      // Create admin notification - FIXED: Use consistent adminId
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'property_rejected',
+        title: 'Property Rejected',
+        message: `Property "${property.name}" has been rejected.`,
+        priority: 'high',
+        metadata: {
+          propertyId: property._id,
+          propertyName: property.name,
+          clientId: property.clientId,
+          action: 'rejected',
+          rejectionReason: rejectionReason
+        }
+      });
+
+      console.log('✅ Notifications created for property rejection');
+    } catch (notificationError) {
+      console.error('❌ Error creating rejection notifications:', notificationError);
+    }
+
     res.status(200).json({
       success: true,
       message: "Property rejected successfully",
@@ -943,6 +769,48 @@ export const requestRevision = async (req, res) => {
       { new: true, runValidators: true }
     ).populate('revisionRequestedBy', 'name email');
 
+     // ✅ Create notifications for revision request - FIXED
+    try {
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          propertyId: property._id,
+          type: 'property_revision_requested',
+          title: 'Revision Requested for Property',
+          message: `Revision requested for your property "${property.name}". Notes: ${revisionNotes}`,
+          priority: 'medium',
+          metadata: {
+            propertyId: property._id,
+            propertyName: property.name,
+            action: 'revision_requested',
+            revisionNotes: revisionNotes
+          }
+        });
+      }
+
+      // Create admin notification - FIXED: Use consistent adminId
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'property_revision_requested',
+        title: 'Revision Requested for Property',
+        message: `Revision requested for property "${property.name}".`,
+        priority: 'high',
+        metadata: {
+          propertyId: property._id,
+          propertyName: property.name,
+          clientId: property.clientId,
+          action: 'revision_requested'
+        }
+      });
+
+      console.log('✅ Notifications created for revision request');
+    } catch (notificationError) {
+      console.error('❌ Error creating revision notifications:', notificationError);
+    }
+
     res.status(200).json({
       success: true,
       message: "Revision requested successfully",
@@ -979,6 +847,47 @@ export const deleteProperty = async (req, res) => {
         success: false,
         message: "Property not found or not owned by user"
       });
+    }
+
+     // ✅ Create notification for property deletion - FIXED
+    try {
+      const clientUser = await User.findOne({ clientId });
+      
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: clientId,
+          propertyId: property._id,
+          type: 'property_deleted',
+          title: 'Property Deleted',
+          message: `Your property "${property.name}" has been deleted successfully.`,
+          priority: 'low',
+          metadata: {
+            propertyId: property._id,
+            propertyName: property.name,
+            action: 'deleted'
+          }
+        });
+      }
+
+      // Create admin notification - FIXED: Use consistent adminId
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'property_deleted',
+        title: 'Property Deleted',
+        message: `Property "${property.name}" has been deleted by client ${clientId}.`,
+        priority: 'high',
+        metadata: {
+          propertyId: property._id,
+          propertyName: property.name,
+          clientId: clientId,
+          action: 'deleted'
+        }
+      });
+
+      console.log('✅ Notifications created for property deletion');
+    } catch (notificationError) {
+      console.error('❌ Error creating deletion notifications:', notificationError);
     }
 
     // 2. Delete associated records

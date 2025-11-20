@@ -214,6 +214,7 @@ import CustomReviewRoutes from './routes/customReviewRoutes.js';
 // import vacateRoutes from './routes/vacateRoutes.js';
 import wishlistRoutes from './routes/wishlistRoutes.js';
 import ticketRoutes from './routes/ticketRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import { existsSync } from 'fs';
 import Admin from "./models/Admin.js";
 import User from "./models/User.js";
@@ -228,7 +229,7 @@ console.log('File exists:', existsSync(path));
 // Initialize Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: ["https://api.livyco.com", "http://localhost:5173", "https://livyco.com", "http://82.29.161.78:5000"],
+    origin: ["https://api.livyco.com", "http://localhost:5173","http://localhost:5174", "https://livyco.com", "http://82.29.161.78:5000"],
     allowedHeaders: [
     'Content-Type', 
     'Authorization', 
@@ -358,6 +359,7 @@ app.use("/api/tickets", ticketRoutes);
 app.use("/api/map", mapRoutes);
 app.use("/api/custom-reviews", CustomReviewRoutes);
 // app.use("/api/vacate", vacateRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
