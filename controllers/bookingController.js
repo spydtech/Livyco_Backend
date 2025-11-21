@@ -4620,7 +4620,7 @@ import User from '../models/User.js';
 import Admin from '../models/Admin.js';
 import { NotificationService } from './notificationController.js';
 
-// Helper function to normalize bed names (remove spaces)
+// Helper function to normalize bed names
 const normalizeBedName = (bedName) => {
   return bedName.replace(/\s+/g, '');
 };
@@ -4637,7 +4637,6 @@ const calculateDaysBetween = (startDate, endDate) => {
   const timeDiff = end.getTime() - start.getTime();
   return Math.ceil(timeDiff / (1000 * 3600 * 24));
 };
-
 
 // Room availability check function
 const checkRoomAvailabilityBeforeBooking = async (propertyId, selectedRooms, moveInDate, endDate, session) => {
@@ -4667,671 +4666,7 @@ const checkRoomAvailabilityBeforeBooking = async (propertyId, selectedRooms, mov
   };
 };
 
-
-
-// Check room availability for date range
-export const checkRoomAvailability = async (req, res) => {
-  try {
-    const { propertyId, startDate, endDate } = req.body;
-    
-    if (!propertyId || !startDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'propertyId and startDate are required parameters'
-      });
-    }
-    
-    const parsedStartDate = new Date(startDate);
-    parsedStartDate.setUTCHours(0, 0, 0, 0);
-    
-    let parsedEndDate;
-    if (endDate) {
-      parsedEndDate = new Date(endDate);
-      parsedEndDate.setUTCHours(0, 0, 0, 0);
-    } else {
-      parsedEndDate = new Date(parsedStartDate);
-      parsedEndDate.setDate(parsedStartDate.getDate() + 1);
-    }
-    
-    // Find conflicting bookings
-    const conflictingBookings = await Booking.find({
-      propertyId,
-      bookingStatus: { $nin: ['cancelled', 'checked_out', 'rejected'] },
-      $or: [
-        { moveInDate: { $lte: parsedStartDate }, moveOutDate: { $gte: parsedStartDate } },
-        { moveInDate: { $gte: parsedStartDate, $lte: parsedEndDate } }
-      ]
-    });
-    
-    const unavailableRooms = conflictingBookings.flatMap(booking => 
-      booking.roomDetails.map(room => room.roomIdentifier)
-    );
-    
-    return res.status(200).json({
-      success: true,
-      unavailableRooms,
-      startDate: parsedStartDate.toISOString().split('T')[0],
-      endDate: parsedEndDate.toISOString().split('T')[0]
-    });
-    
-  } catch (error) {
-    console.error('Availability check error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-};
-
-// Create booking with transfer-ready structure
-// export const createBooking = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   let transactionCommitted = false;
-  
-//   try {
-//     await session.startTransaction();
-    
-//     console.log('📦 Creating booking...', req.body);
-
-//     if (!req.user || !req.user.id) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(401).json({
-//         success: false,
-//         message: 'Authentication required'
-//       });
-//     }
-
-//     const {
-//       propertyId,
-//       roomType,
-//       selectedRooms,
-//       moveInDate,
-//       endDate,
-//       durationType,
-//       durationDays,
-//       durationMonths,
-//       personCount,
-//       customerDetails,
-//       pricing
-//     } = req.body;
-
-//     console.log('📋 Received booking data:', {
-//       propertyId,
-//       roomType,
-//       selectedRooms,
-//       moveInDate,
-//       endDate,
-//       durationType,
-//       user: req.user.id
-//     });
-
-//     // Validation
-//     if (!propertyId || !roomType || !selectedRooms || !moveInDate) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Missing required fields: propertyId, roomType, selectedRooms, moveInDate'
-//       });
-//     }
-
-//     // Parse dates
-//     const parsedMoveInDate = new Date(moveInDate);
-//     parsedMoveInDate.setUTCHours(0, 0, 0, 0);
-
-//     let parsedEndDate;
-//     if (endDate) {
-//       parsedEndDate = new Date(endDate);
-//       parsedEndDate.setUTCHours(0, 0, 0, 0);
-//     } else if (durationType === 'monthly' && durationMonths) {
-//       parsedEndDate = new Date(parsedMoveInDate);
-//       parsedEndDate.setMonth(parsedMoveInDate.getMonth() + parseInt(durationMonths));
-//     } else if (durationType === 'daily' && durationDays) {
-//       parsedEndDate = new Date(parsedMoveInDate);
-//       parsedEndDate.setDate(parsedMoveInDate.getDate() + parseInt(durationDays));
-//     } else {
-//       parsedEndDate = new Date(parsedMoveInDate);
-//       parsedEndDate.setMonth(parsedMoveInDate.getMonth() + 1);
-//     }
-
-//     console.log('📅 Date range:', {
-//       moveIn: parsedMoveInDate,
-//       moveOut: parsedEndDate
-//     });
-
-//     // Check room availability
-//     const roomAvailability = await checkRoomAvailabilityBeforeBooking(
-//       propertyId, 
-//       selectedRooms, 
-//       parsedMoveInDate,
-//       parsedEndDate,
-//       session
-//     );
-
-//     if (!roomAvailability.available) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(409).json({
-//         success: false,
-//         message: 'Some selected rooms are not available',
-//         unavailableRooms: roomAvailability.unavailableRooms
-//       });
-//     }
-
-//     // Get property and user details
-//     const [property, user, roomConfig] = await Promise.all([
-//       Property.findById(propertyId).session(session),
-//       User.findById(req.user.id).session(session),
-//       Room.findOne({ propertyId }).session(session)
-//     ]);
-
-//     if (!property) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'Property not found' 
-//       });
-//     }
-
-//     if (!user) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'User not found' 
-//       });
-//     }
-
-//     if (!roomConfig) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'Room configuration not found for this property' 
-//       });
-//     }
-
-//     const roomTypeConfig = roomConfig.roomTypes.find(rt => rt.type === roomType);
-//     if (!roomTypeConfig) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(400).json({ 
-//         success: false, 
-//         message: 'Selected room type not found in configuration' 
-//       });
-//     }
-
-//     // Create room details with consistent identifiers
-//     const roomDetails = selectedRooms.map(roomIdentifier => {
-//       const parts = roomIdentifier.split('-');
-//       if (parts.length < 3) {
-//         return {
-//           roomIdentifier,
-//           sharingType: 'unknown',
-//           floor: 1,
-//           roomNumber: 'unknown',
-//           bed: 'unknown'
-//         };
-//       }
-      
-//       const sharingType = parts[0];
-//       const roomNumber = parts.slice(1, parts.length - 1).join('-');
-//       const bed = parts[parts.length - 1];
-      
-//       const consistentIdentifier = createRoomIdentifier(sharingType, roomNumber, bed);
-      
-//       return {
-//         roomIdentifier: consistentIdentifier,
-//         sharingType,
-//         floor: 1,
-//         roomNumber,
-//         bed
-//       };
-//     });
-
-//     // Calculate pricing based on duration
-//     let monthlyRent = roomTypeConfig.price || 0;
-//     let totalRent = monthlyRent;
-//     let advanceAmount = pricing?.advanceAmount || 0;
-//     let securityDeposit = (roomTypeConfig.deposit || 0) * selectedRooms.length;
-//     let totalAmount = pricing?.totalAmount || 0;
-
-//     // If pricing not provided, calculate it
-//     if (!pricing) {
-//       switch(durationType) {
-//         case 'daily':
-//           const dailyRate = monthlyRent / 30;
-//           totalRent = dailyRate * parseInt(durationDays || 1);
-//           advanceAmount = totalRent;
-//           break;
-//         case 'monthly':
-//           totalRent = monthlyRent * parseInt(durationMonths || 1);
-//           advanceAmount = totalRent;
-//           break;
-//         case 'custom':
-//           const daysDiff = calculateDaysBetween(parsedMoveInDate, parsedEndDate);
-//           const customDailyRate = monthlyRent / 30;
-//           totalRent = customDailyRate * daysDiff;
-//           advanceAmount = totalRent;
-//           break;
-//         default:
-//           advanceAmount = monthlyRent;
-//       }
-//       totalAmount = advanceAmount + securityDeposit;
-//     }
-
-//     console.log('💰 Pricing calculated:', {
-//       monthlyRent,
-//       totalRent,
-//       securityDeposit,
-//       advanceAmount,
-//       totalAmount
-//     });
-
-//     // Create booking data
-//     const bookingData = {
-//       userId: req.user.id,
-//       clientId: property.clientId,
-//       propertyId,
-//       roomType: {
-//         type: roomType,
-//         name: roomTypeConfig.label || roomType,
-//         capacity: roomTypeConfig.capacity || 1
-//       },
-//       roomDetails,
-//       moveInDate: parsedMoveInDate,
-//       moveOutDate: parsedEndDate,
-//       durationType: durationType || 'monthly',
-//       durationDays: durationType === 'daily' ? parseInt(durationDays) : null,
-//       durationMonths: durationType === 'monthly' ? parseInt(durationMonths) : null,
-//       personCount: parseInt(personCount) || 1,
-//       customerDetails: customerDetails || {},
-//       pricing: {
-//         monthlyRent: monthlyRent,
-//         totalRent: totalRent,
-//         securityDeposit: securityDeposit,
-//         advanceAmount: advanceAmount,
-//         totalAmount: totalAmount,
-//         maintenanceFee: 0
-//       },
-//       paymentInfo: {
-//         paymentStatus: 'pending',
-//         paymentMethod: 'razorpay',
-//         paidAmount: 0
-//       },
-//       bookingStatus: 'pending_payment',
-//       transferStatus: 'manual_pending'
-//     };
-
-//     console.log('📝 Saving booking data...', bookingData);
-
-//     const newBooking = new Booking(bookingData);
-//     await newBooking.save({ session });
-
-//     await session.commitTransaction();
-//     transactionCommitted = true;
-//     await session.endSession();
-
-//     console.log('✅ Booking created successfully:', newBooking._id);
-
-//     // ✅ FIXED: Create notification AFTER transaction is committed
-//     try {
-//       await NotificationService.createBookingNotification(newBooking, 'booking_created');
-//       console.log('✅ Booking creation notification created successfully');
-//     } catch (notificationError) {
-//       console.error('❌ Failed to create booking notification:', notificationError);
-//       // Don't fail the booking if notification fails
-//     }
-
-//     return res.status(201).json({
-//       success: true,
-//       message: 'Booking created successfully! Payment pending.',
-//       booking: {
-//         id: newBooking._id,
-//         propertyId: property._id,
-//         propertyName: property.name,
-//         roomType: newBooking.roomType.name,
-//         rooms: newBooking.roomDetails,
-//         moveInDate: newBooking.moveInDate,
-//         moveOutDate: newBooking.moveOutDate,
-//         durationType: newBooking.durationType,
-//         durationDays: newBooking.durationDays,
-//         durationMonths: newBooking.durationMonths,
-//         totalAmount: newBooking.pricing.totalAmount,
-//         status: newBooking.bookingStatus
-//       }
-//     });
-
-//   } catch (error) {
-//     // Safe transaction cleanup
-//     try {
-//       if (session.inTransaction() && !transactionCommitted) {
-//         await session.abortTransaction();
-//       }
-//       await session.endSession();
-//     } catch (sessionError) {
-//       console.error('Session cleanup error:', sessionError);
-//     }
-    
-//     console.error('❌ Booking creation error:', error);
-//     return res.status(500).json({
-//       success: false,
-//       message: 'Internal server error',
-//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//     });
-//   }
-// };
-
-
-// Create booking with transfer-ready structure
-// export const createBooking = async (req, res) => {
-//   const session = await mongoose.startSession();
-//   let transactionCommitted = false;
-  
-//   try {
-//     await session.startTransaction();
-    
-//     console.log('📦 Creating booking...', req.body);
-
-//     if (!req.user || !req.user.id) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(401).json({
-//         success: false,
-//         message: 'Authentication required'
-//       });
-//     }
-
-//     const {
-//       propertyId,
-//       roomType,
-//       selectedRooms,
-//       moveInDate,
-//       endDate,
-//       durationType,
-//       durationDays,
-//       durationMonths,
-//       personCount,
-//       customerDetails,
-//       pricing
-//     } = req.body;
-
-//     console.log('📋 Received booking data:', {
-//       propertyId,
-//       roomType,
-//       selectedRooms,
-//       moveInDate,
-//       endDate,
-//       durationType,
-//       user: req.user.id
-//     });
-
-//     // Validation
-//     if (!propertyId || !roomType || !selectedRooms || !moveInDate) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Missing required fields: propertyId, roomType, selectedRooms, moveInDate'
-//       });
-//     }
-
-//     // Parse dates
-//     const parsedMoveInDate = new Date(moveInDate);
-//     parsedMoveInDate.setUTCHours(0, 0, 0, 0);
-
-//     let parsedEndDate;
-//     if (endDate) {
-//       parsedEndDate = new Date(endDate);
-//       parsedEndDate.setUTCHours(0, 0, 0, 0);
-//     } else if (durationType === 'monthly' && durationMonths) {
-//       parsedEndDate = new Date(parsedMoveInDate);
-//       parsedEndDate.setMonth(parsedMoveInDate.getMonth() + parseInt(durationMonths));
-//     } else if (durationType === 'daily' && durationDays) {
-//       parsedEndDate = new Date(parsedMoveInDate);
-//       parsedEndDate.setDate(parsedMoveInDate.getDate() + parseInt(durationDays));
-//     } else {
-//       parsedEndDate = new Date(parsedMoveInDate);
-//       parsedEndDate.setMonth(parsedMoveInDate.getMonth() + 1);
-//     }
-
-//     console.log('📅 Date range:', {
-//       moveIn: parsedMoveInDate,
-//       moveOut: parsedEndDate
-//     });
-
-//     // Check room availability
-//     const roomAvailability = await checkRoomAvailabilityBeforeBooking(
-//       propertyId, 
-//       selectedRooms, 
-//       parsedMoveInDate,
-//       parsedEndDate,
-//       session
-//     );
-
-//     if (!roomAvailability.available) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(409).json({
-//         success: false,
-//         message: 'Some selected rooms are not available',
-//         unavailableRooms: roomAvailability.unavailableRooms
-//       });
-//     }
-
-//     // Get property and user details
-//     const [property, user, roomConfig] = await Promise.all([
-//       Property.findById(propertyId).session(session),
-//       User.findById(req.user.id).session(session),
-//       Room.findOne({ propertyId }).session(session)
-//     ]);
-
-//     if (!property) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'Property not found' 
-//       });
-//     }
-
-//     if (!user) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'User not found' 
-//       });
-//     }
-
-//     if (!roomConfig) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'Room configuration not found for this property' 
-//       });
-//     }
-
-//     const roomTypeConfig = roomConfig.roomTypes.find(rt => rt.type === roomType);
-//     if (!roomTypeConfig) {
-//       await session.abortTransaction();
-//       await session.endSession();
-//       return res.status(400).json({ 
-//         success: false, 
-//         message: 'Selected room type not found in configuration' 
-//       });
-//     }
-
-//     // Create room details with consistent identifiers
-//     const roomDetails = selectedRooms.map(roomIdentifier => {
-//       const parts = roomIdentifier.split('-');
-//       if (parts.length < 3) {
-//         return {
-//           roomIdentifier,
-//           sharingType: 'unknown',
-//           floor: 1,
-//           roomNumber: 'unknown',
-//           bed: 'unknown'
-//         };
-//       }
-      
-//       const sharingType = parts[0];
-//       const roomNumber = parts.slice(1, parts.length - 1).join('-');
-//       const bed = parts[parts.length - 1];
-      
-//       const consistentIdentifier = createRoomIdentifier(sharingType, roomNumber, bed);
-      
-//       return {
-//         roomIdentifier: consistentIdentifier,
-//         sharingType,
-//         floor: 1,
-//         roomNumber,
-//         bed
-//       };
-//     });
-
-//     // Calculate pricing based on duration
-//     let monthlyRent = roomTypeConfig.price || 0;
-//     let totalRent = monthlyRent;
-//     let advanceAmount = pricing?.advanceAmount || 0;
-//     let securityDeposit = (roomTypeConfig.deposit || 0) * selectedRooms.length;
-//     let totalAmount = pricing?.totalAmount || 0;
-
-//     // If pricing not provided, calculate it
-//     if (!pricing) {
-//       switch(durationType) {
-//         case 'daily':
-//           const dailyRate = monthlyRent / 30;
-//           totalRent = dailyRate * parseInt(durationDays || 1);
-//           advanceAmount = totalRent;
-//           break;
-//         case 'monthly':
-//           totalRent = monthlyRent * parseInt(durationMonths || 1);
-//           advanceAmount = totalRent;
-//           break;
-//         case 'custom':
-//           const daysDiff = calculateDaysBetween(parsedMoveInDate, parsedEndDate);
-//           const customDailyRate = monthlyRent / 30;
-//           totalRent = customDailyRate * daysDiff;
-//           advanceAmount = totalRent;
-//           break;
-//         default:
-//           advanceAmount = monthlyRent;
-//       }
-//       totalAmount = advanceAmount + securityDeposit;
-//     }
-
-//     console.log('💰 Pricing calculated:', {
-//       monthlyRent,
-//       totalRent,
-//       securityDeposit,
-//       advanceAmount,
-//       totalAmount
-//     });
-
-//     // Create booking data with proper status
-//     const bookingData = {
-//       userId: req.user.id,
-//       clientId: property.clientId,
-//       propertyId,
-//       roomType: {
-//         type: roomType,
-//         name: roomTypeConfig.label || roomType,
-//         capacity: roomTypeConfig.capacity || 1
-//       },
-//       roomDetails,
-//       moveInDate: parsedMoveInDate,
-//       moveOutDate: parsedEndDate,
-//       durationType: durationType || 'monthly',
-//       durationDays: durationType === 'daily' ? parseInt(durationDays) : null,
-//       durationMonths: durationType === 'monthly' ? parseInt(durationMonths) : null,
-//       personCount: parseInt(personCount) || 1,
-//       customerDetails: customerDetails || {},
-//       pricing: {
-//         monthlyRent: monthlyRent,
-//         totalRent: totalRent,
-//         securityDeposit: securityDeposit,
-//         advanceAmount: advanceAmount,
-//         totalAmount: totalAmount,
-//         maintenanceFee: 0
-//       },
-//       paymentInfo: {
-//         paymentStatus: 'pending',
-//         paymentMethod: 'razorpay',
-//         paidAmount: 0,
-//         outstandingAmount: totalAmount
-//       },
-//       bookingStatus: 'pending_payment',
-//       transferStatus: 'manual_pending',
-//       payments: []
-//     };
-
-//     console.log('📝 Saving booking data...', bookingData);
-
-//     const newBooking = new Booking(bookingData);
-//     await newBooking.save({ session });
-
-//     await session.commitTransaction();
-//     transactionCommitted = true;
-//     await session.endSession();
-
-//     console.log('✅ Booking created successfully:', newBooking._id);
-
-//     // ✅ Create notification AFTER transaction is committed
-//     try {
-//       await NotificationService.createBookingNotification(newBooking, 'booking_created');
-//       console.log('✅ Booking creation notification created successfully');
-//     } catch (notificationError) {
-//       console.error('❌ Failed to create booking notification:', notificationError);
-//       // Don't fail the booking if notification fails
-//     }
-
-//     return res.status(201).json({
-//       success: true,
-//       message: 'Booking created successfully! Payment pending.',
-//       booking: {
-//         id: newBooking._id,
-//         propertyId: property._id,
-//         propertyName: property.name,
-//         roomType: newBooking.roomType.name,
-//         rooms: newBooking.roomDetails,
-//         moveInDate: newBooking.moveInDate,
-//         moveOutDate: newBooking.moveOutDate,
-//         durationType: newBooking.durationType,
-//         durationDays: newBooking.durationDays,
-//         durationMonths: newBooking.durationMonths,
-//         totalAmount: newBooking.pricing.totalAmount,
-//         status: newBooking.bookingStatus,
-//         paymentStatus: newBooking.paymentInfo.paymentStatus
-//       }
-//     });
-
-//   } catch (error) {
-//     // Safe transaction cleanup
-//     try {
-//       if (session.inTransaction() && !transactionCommitted) {
-//         await session.abortTransaction();
-//       }
-//       await session.endSession();
-//     } catch (sessionError) {
-//       console.error('Session cleanup error:', sessionError);
-//     }
-    
-//     console.error('❌ Booking creation error:', error);
-//     return res.status(500).json({
-//       success: false,
-//       message: 'Internal server error',
-//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//     });
-//   }
-// };
-
-//testing
-
-// Create booking with proper error handling and data validation// Create booking with proper error handling and data validation
+// Create booking - SIMPLIFIED AND FIXED VERSION
 export const createBooking = async (req, res) => {
   const session = await mongoose.startSession();
   let transactionCommitted = false;
@@ -5432,10 +4767,9 @@ export const createBooking = async (req, res) => {
     }
 
     // Get property and user details
-    const [property, user, roomConfig] = await Promise.all([
+    const [property, user] = await Promise.all([
       Property.findById(propertyId).session(session),
-      User.findById(req.user.id).session(session),
-      Room.findOne({ propertyId }).session(session)
+      User.findById(req.user.id).session(session)
     ]);
 
     if (!property) {
@@ -5456,36 +4790,48 @@ export const createBooking = async (req, res) => {
       });
     }
 
-    // Create room details with consistent identifiers
-    const roomDetails = selectedRooms.map(roomIdentifier => {
-      const parts = roomIdentifier.split('-');
-      if (parts.length < 3) {
+    // Process room details
+    const roomDetails = (selectedRooms || []).map(roomIdentifier => {
+      try {
+        const parts = roomIdentifier.split('-');
+        
+        if (parts.length >= 3) {
+          const sharingType = parts[0];
+          const roomNumber = parts[1];
+          const bed = parts.slice(2).join('-');
+          
+          return {
+            roomIdentifier: roomIdentifier,
+            sharingType: sharingType,
+            floor: parseInt(roomNumber.charAt(0)) || 1,
+            roomNumber: roomNumber,
+            bed: bed
+          };
+        } else {
+          return {
+            roomIdentifier: roomIdentifier,
+            sharingType: roomType || 'unknown',
+            floor: 1,
+            roomNumber: 'unknown',
+            bed: 'unknown'
+          };
+        }
+      } catch (error) {
+        console.error('❌ Error processing room identifier:', roomIdentifier, error);
         return {
-          roomIdentifier,
-          sharingType: 'unknown',
+          roomIdentifier: roomIdentifier,
+          sharingType: roomType || 'unknown',
           floor: 1,
           roomNumber: 'unknown',
           bed: 'unknown'
         };
       }
-      
-      const sharingType = parts[0];
-      const roomNumber = parts.slice(1, parts.length - 1).join('-');
-      const bed = parts[parts.length - 1];
-      
-      const consistentIdentifier = createRoomIdentifier(sharingType, roomNumber, bed);
-      
-      return {
-        roomIdentifier: consistentIdentifier,
-        sharingType,
-        floor: 1,
-        roomNumber,
-        bed
-      };
     });
 
-    // Calculate pricing
-    let monthlyRent = pricing?.monthlyRent || 0;
+    console.log('🛏️ Processed room details:', roomDetails);
+
+    // Calculate pricing - FIXED: Use provided pricing or calculate defaults
+    let monthlyRent = pricing?.monthlyRent || 1; // Default to 1 if not provided
     let totalRent = pricing?.totalRent || monthlyRent;
     let advanceAmount = pricing?.advanceAmount || 0;
     let securityDeposit = pricing?.securityDeposit || 0;
@@ -5493,14 +4839,17 @@ export const createBooking = async (req, res) => {
 
     // If pricing not provided, calculate defaults
     if (!pricing || Object.keys(pricing).length === 0) {
+      const RoomModel = await import('../models/Room.js').then(mod => mod.default);
+      const roomConfig = await RoomModel.findOne({ propertyId }).session(session);
       if (roomConfig) {
         const roomTypeConfig = roomConfig.roomTypes.find(rt => rt.type === roomType);
         if (roomTypeConfig) {
-          monthlyRent = roomTypeConfig.price || 0;
+          monthlyRent = roomTypeConfig.price || 1;
           securityDeposit = (roomTypeConfig.deposit || 0) * selectedRooms.length;
         }
       }
       
+      // Calculate based on duration type
       switch(durationType) {
         case 'daily':
           const dailyRate = monthlyRent / 30;
@@ -5521,19 +4870,40 @@ export const createBooking = async (req, res) => {
           advanceAmount = monthlyRent;
       }
       totalAmount = advanceAmount + securityDeposit;
+    } else {
+      // Use provided pricing
+      monthlyRent = pricing.monthlyRent || monthlyRent;
+      totalRent = pricing.totalRent || totalRent;
+      advanceAmount = pricing.advanceAmount || advanceAmount;
+      securityDeposit = pricing.securityDeposit || securityDeposit;
+      totalAmount = pricing.totalAmount || totalAmount;
     }
 
-    // Create booking data with proper status
-    const bookingData = {
+    // Ensure minimum amount of 1 INR for testing
+    if (totalAmount < 1) {
+      totalAmount = 1;
+      advanceAmount = 1;
+    }
+
+    console.log('💰 Final pricing:', {
+      monthlyRent,
+      totalRent,
+      securityDeposit,
+      advanceAmount,
+      totalAmount
+    });
+
+    // Create booking data
+    const bookingDataToSave = {
       userId: req.user.id,
       clientId: property.clientId,
       propertyId,
       roomType: {
         type: roomType,
         name: roomType,
-        capacity: personCount || 1
+        capacity: parseInt(personCount) || 1
       },
-      roomDetails,
+      roomDetails: roomDetails,
       moveInDate: parsedMoveInDate,
       moveOutDate: parsedEndDate,
       durationType: durationType || 'monthly',
@@ -5560,9 +4930,9 @@ export const createBooking = async (req, res) => {
       payments: []
     };
 
-    console.log('📝 Saving booking data...', bookingData);
+    console.log('📝 Saving booking data...');
 
-    const newBooking = new Booking(bookingData);
+    const newBooking = new Booking(bookingDataToSave);
     await newBooking.save({ session });
 
     await session.commitTransaction();
@@ -5615,7 +4985,7 @@ export const createBooking = async (req, res) => {
       }
       await session.endSession();
     } catch (sessionError) {
-      console.error('Session cleanup error:', sessionError);
+      console.error('❌ Session cleanup error:', sessionError);
     }
     
     console.error('❌ Booking creation error:', error);
@@ -5627,7 +4997,7 @@ export const createBooking = async (req, res) => {
   }
 };
 
-// Update booking status after successful payment - ENHANCED VERSION
+// Update booking after payment - FIXED VERSION
 export const updateBookingAfterPayment = async (bookingId, paymentData, bookingData = null) => {
   const session = await mongoose.startSession();
   let transactionCommitted = false;
@@ -5637,11 +5007,10 @@ export const updateBookingAfterPayment = async (bookingId, paymentData, bookingD
 
     console.log('💰 Updating booking after payment:', { 
       bookingId, 
-      paymentData,
-      hasBookingData: !!bookingData
+      paymentData
     });
 
-    // Find the booking - try multiple approaches
+    // Find the booking
     let booking;
     
     if (bookingId) {
@@ -5772,6 +5141,61 @@ const calculateTransferBreakdown = (totalAmount) => {
     }
   };
 };
+
+// Check room availability for date range
+export const checkRoomAvailability = async (req, res) => {
+  try {
+    const { propertyId, startDate, endDate } = req.body;
+    
+    if (!propertyId || !startDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'propertyId and startDate are required parameters'
+      });
+    }
+    
+    const parsedStartDate = new Date(startDate);
+    parsedStartDate.setUTCHours(0, 0, 0, 0);
+    
+    let parsedEndDate;
+    if (endDate) {
+      parsedEndDate = new Date(endDate);
+      parsedEndDate.setUTCHours(0, 0, 0, 0);
+    } else {
+      parsedEndDate = new Date(parsedStartDate);
+      parsedEndDate.setDate(parsedStartDate.getDate() + 1);
+    }
+    
+    // Find conflicting bookings
+    const conflictingBookings = await Booking.find({
+      propertyId,
+      bookingStatus: { $nin: ['cancelled', 'checked_out', 'rejected'] },
+      $or: [
+        { moveInDate: { $lte: parsedStartDate }, moveOutDate: { $gte: parsedStartDate } },
+        { moveInDate: { $gte: parsedStartDate, $lte: parsedEndDate } }
+      ]
+    });
+    
+    const unavailableRooms = conflictingBookings.flatMap(booking => 
+      booking.roomDetails.map(room => room.roomIdentifier)
+    );
+    
+    return res.status(200).json({
+      success: true,
+      unavailableRooms,
+      startDate: parsedStartDate.toISOString().split('T')[0],
+      endDate: parsedEndDate.toISOString().split('T')[0]
+    });
+    
+  } catch (error) {
+    console.error('Availability check error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 
 
 // Get all available beds with status

@@ -2267,16 +2267,16 @@
 
 
 
-//testing notification
-import Notification from '../models/Notification.js';
+//testing notificationimport Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import Booking from '../models/Booking.js';
 import Property from '../models/Property.js';
+import mongoose from 'mongoose';
 
-// Enhanced Notification service class
+// Enhanced Notification service class with session support
 class NotificationService {
-  // Create notification
-  static async createNotification(notificationData) {
+  // Create notification with session support
+  static async createNotification(notificationData, session = null) {
     try {
       console.log('📧 Creating notification:', {
         type: notificationData.type,
@@ -2287,7 +2287,12 @@ class NotificationService {
       });
       
       const notification = new Notification(notificationData);
-      await notification.save();
+      
+      if (session) {
+        await notification.save({ session });
+      } else {
+        await notification.save();
+      }
       
       console.log('✅ Notification created successfully:', notification._id);
       return notification;
@@ -2297,19 +2302,21 @@ class NotificationService {
     }
   }
 
-  // Create payment notification for user, client, and admin
-  static async createPaymentNotification(userId, paymentType, amount, bookingId, metadata = {}) {
+  // Create payment notification for user, client, and admin with session support
+  static async createPaymentNotification(userId, paymentType, amount, bookingId, metadata = {}, session = null) {
     try {
       const notifications = [];
       
       // Get user and booking details
       const user = await User.findById(userId);
       if (!user) {
+        console.error('❌ User not found for payment notification:', userId);
         throw new Error('User not found');
       }
 
       const booking = await Booking.findById(bookingId).populate('propertyId');
       if (!booking) {
+        console.error('❌ Booking not found for payment notification:', bookingId);
         throw new Error('Booking not found');
       }
 
@@ -2358,6 +2365,8 @@ class NotificationService {
             isRead: false
           };
           notifications.push(clientNotification);
+        } else {
+          console.log('⚠️ Client user not found for clientId:', property.clientId);
         }
       }
 
@@ -2381,8 +2390,14 @@ class NotificationService {
       };
       notifications.push(adminNotification);
 
-      // Create all notifications
-      const createdNotifications = await Notification.insertMany(notifications);
+      // Create all notifications with session support
+      let createdNotifications = [];
+      if (session) {
+        createdNotifications = await Notification.insertMany(notifications, { session });
+      } else {
+        createdNotifications = await Notification.insertMany(notifications);
+      }
+      
       console.log(`💰 Created ${createdNotifications.length} payment notifications for ${paymentType}`);
       return createdNotifications;
 
@@ -2392,16 +2407,15 @@ class NotificationService {
     }
   }
 
-  // Create booking notification for user, client, and admin
-  static async createBookingNotification(booking, action, additionalData = {}) {
+  // Create booking notification for user, client, and admin with session support
+  static async createBookingNotification(booking, action, additionalData = {}, session = null) {
     try {
       const notifications = [];
       
-      // Ensure booking is populated with property
+      // Ensure we have a proper booking object with populated fields
       let populatedBooking = booking;
-      if (typeof booking.populate === 'function') {
-        populatedBooking = await booking.populate('propertyId').populate('userId').execPopulate();
-      } else if (!booking.propertyId || typeof booking.propertyId === 'string') {
+      if (booking._id && (!booking.propertyId || typeof booking.propertyId === 'string')) {
+        // If booking is not populated, populate it
         populatedBooking = await Booking.findById(booking._id)
           .populate('propertyId')
           .populate('userId');
@@ -2416,7 +2430,7 @@ class NotificationService {
       }
 
       // User notification
-      if (user) {
+      if (user && user._id) {
         const userNotification = {
           userId: user._id,
           bookingId: populatedBooking._id,
@@ -2436,6 +2450,8 @@ class NotificationService {
         };
         notifications.push(userNotification);
         console.log(`👤 Created user notification for booking ${action}`);
+      } else {
+        console.log('⚠️ User not found for booking notification');
       }
 
       // Client notification
@@ -2462,6 +2478,8 @@ class NotificationService {
           };
           notifications.push(clientNotification);
           console.log(`🏢 Created client notification for booking ${action}`);
+        } else {
+          console.log('⚠️ Client user not found for clientId:', property.clientId);
         }
       }
 
@@ -2486,9 +2504,14 @@ class NotificationService {
       notifications.push(adminNotification);
       console.log(`👑 Created admin notification for booking ${action}`);
 
-      // Create all notifications
+      // Create all notifications with session support
+      let createdNotifications = [];
       if (notifications.length > 0) {
-        const createdNotifications = await Notification.insertMany(notifications);
+        if (session) {
+          createdNotifications = await Notification.insertMany(notifications, { session });
+        } else {
+          createdNotifications = await Notification.insertMany(notifications);
+        }
         console.log(`✅ Created ${createdNotifications.length} notifications for booking ${action}`);
         return createdNotifications;
       } else {
@@ -2740,21 +2763,25 @@ class NotificationService {
   }
 }
 
-// Get user notifications
+// Get user notifications with better error handling
 export const getUserNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
-    const userRole = req.user.role;
     
     console.log('👤 User notification request:', {
       userId,
-      userRole,
       query: req.query
     });
 
     const { page = 1, limit = 20, unreadOnly = false, type } = req.query;
 
-    const query = { userId: userId };
+    // Build query
+    const query = { 
+      $or: [
+        { userId: userId },
+        { userId: new mongoose.Types.ObjectId(userId) } // Handle both string and ObjectId
+      ]
+    };
     
     if (unreadOnly === 'true') {
       query.isRead = false;
@@ -2768,15 +2795,18 @@ export const getUserNotifications = async (req, res) => {
 
     const notifications = await Notification.find(query)
       .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
       .populate('propertyId', 'name locality city images')
       .populate('bookingId', 'bookingStatus totalAmount moveInDate moveOutDate')
       .lean();
 
     const total = await Notification.countDocuments(query);
     const unreadCount = await Notification.countDocuments({ 
-      userId: userId, 
+      $or: [
+        { userId: userId },
+        { userId: new mongoose.Types.ObjectId(userId) }
+      ],
       isRead: false 
     });
 
@@ -2784,11 +2814,13 @@ export const getUserNotifications = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      notifications: notifications,
-      unreadCount: unreadCount,
-      total: total,
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(total / limit)
+      data: {
+        notifications: notifications,
+        unreadCount: unreadCount,
+        total: total,
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit)
+      }
     });
 
   } catch (error) {
@@ -2796,7 +2828,7 @@ export const getUserNotifications = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user notifications',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
