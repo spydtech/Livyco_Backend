@@ -2267,7 +2267,9 @@
 
 
 
-//testing notificationimport Notification from '../models/Notification.js';
+//testing notification
+
+import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import Booking from '../models/Booking.js';
 import Property from '../models/Property.js';
