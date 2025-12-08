@@ -42,8 +42,10 @@ import express from "express";
 import { verifyToken } from "../utils/jwtUtils.js";
 import { 
   createOrder, 
+  createRentOrder,
   // testRazorpay,
   validatePayment, 
+  validateRentPayment,
   getPaymentDetails, 
   refundPayment,
   sendPaymentRequest,
@@ -69,7 +71,10 @@ const router = express.Router();
 // router.get('/payments/test', testRazorpay);
 // router.get('/payments/config-check', verifyToken, checkRazorpayConfig);
 router.post("/payments/create-order", verifyToken, createOrder);
+router.post("/payments/create-rent-order", verifyToken, createRentOrder);
+ 
 router.post("/payments/validate-payment", verifyToken, validatePayment);
+router.post("/payments/validate-rent-payment", verifyToken, validateRentPayment);
 router.get("/payments/:paymentId", verifyToken, getPaymentDetails);
 router.post("/payments/refund", verifyToken, refundPayment);
 router.post("/payments/request", verifyToken, sendPaymentRequest);

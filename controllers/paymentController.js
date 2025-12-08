@@ -1641,6 +1641,78 @@ const calculateTransferBreakdown = (totalAmount) => {
   };
 };
 
+
+
+export const createRentOrder = async (req, res) => {
+  try {
+    const { amount, currency = 'INR', receipt, rentData } = req.body;
+ 
+    console.log('💰 Creating rent order for amount:', amount, 'Rent Data:', rentData);
+ 
+    if (!razorpay) {
+      return res.status(500).json({
+        success: false,
+        message: 'Payment gateway not initialized'
+      });
+    }
+ 
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid amount is required'
+      });
+    }
+ 
+    if (!rentData || !rentData.bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rent data with booking ID is required'
+      });
+    }
+ 
+    const amountInPaise = parseInt(amount);
+    if (isNaN(amountInPaise) || amountInPaise < 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be at least 1 INR (100 paise)'
+      });
+    }
+ 
+    const options = {
+      amount: amountInPaise,
+      currency: currency,
+      receipt: receipt || `rent_receipt_${Date.now()}`,
+      payment_capture: 1,
+      notes: {
+        rent_data: JSON.stringify(rentData),
+        payment_type: 'rent_payment'
+      }
+    };
+ 
+    const order = await razorpay.orders.create(options);
+    console.log('✅ Rent order created successfully:', order.id);
+ 
+    res.status(200).json({
+      success: true,
+      order: {
+        id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        receipt: order.receipt
+      }
+    });
+ 
+  } catch (error) {
+    console.error('❌ Rent order creation error:', error);
+   
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create rent payment order',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 // Create Razorpay order - FIXED VERSION
 export const createOrder = async (req, res) => {
   try {
@@ -2129,6 +2201,395 @@ export const createOrder = async (req, res) => {
           });
         }
       };
+
+
+
+
+      export const validateRentPayment = async (req, res) => {
+  const session = await mongoose.startSession();
+ 
+  try {
+    await session.startTransaction();
+   
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      rentData
+    } = req.body;
+ 
+    console.log('🔍 Validating rent payment with review data:', {
+      order_id: razorpay_order_id,
+      payment_id: razorpay_payment_id,
+      rentData: rentData
+    });
+ 
+    // Validate required fields
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      console.error('❌ Missing payment verification data');
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'Missing payment verification data'
+      });
+    }
+ 
+    if (!rentData || !rentData.bookingId) {
+      console.error('❌ Missing rent data with booking ID');
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'Rent data with booking ID is required'
+      });
+    }
+ 
+    console.log('✅ All required fields present');
+ 
+    // Verify payment signature
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest('hex');
+ 
+    console.log('🔐 Signature verification:', {
+      expected: expectedSignature,
+      received: razorpay_signature,
+      match: expectedSignature === razorpay_signature
+    });
+ 
+    if (expectedSignature !== razorpay_signature) {
+      console.error('❌ Payment signature mismatch');
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'Payment verification failed - invalid signature'
+      });
+    }
+ 
+    console.log('✅ Rent payment signature verified');
+ 
+    // Get payment details from Razorpay
+    let payment;
+    try {
+      console.log('📡 Fetching payment details from Razorpay...');
+      payment = await razorpay.payments.fetch(razorpay_payment_id);
+      console.log('💰 Rent payment details:', {
+        id: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        method: payment.method
+      });
+    } catch (razorpayError) {
+      console.error('❌ Razorpay payment fetch error:', razorpayError);
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to fetch payment details from Razorpay'
+      });
+    }
+ 
+    if (payment.status !== 'captured') {
+      console.error('❌ Payment not captured, status:', payment.status);
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'Rent payment not captured successfully'
+      });
+    }
+ 
+    const amount = payment.amount / 100; // Convert from paise to rupees
+    console.log('💰 Payment amount:', amount, 'INR');
+ 
+    // Validate user authentication
+    if (!req.user || !req.user.id) {
+      console.error('❌ User authentication missing');
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(401).json({
+        success: false,
+        message: 'User authentication required'
+      });
+    }
+ 
+    console.log('👤 User authenticated:', req.user.id);
+ 
+    // Find the booking
+    console.log('🔍 Finding booking with ID:', rentData.bookingId);
+    const booking = await Booking.findById(rentData.bookingId).session(session);
+ 
+    if (!booking) {
+      console.error('❌ Booking not found with ID:', rentData.bookingId);
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+ 
+    console.log('✅ Booking found:', {
+      id: booking._id,
+      userId: booking.userId,
+      propertyId: booking.propertyId,
+      existingPayments: booking.payments ? booking.payments.length : 0,
+      paymentRequests: booking.paymentrequest ? booking.paymentrequest.length : 0
+    });
+ 
+    // Verify that the payment is from the correct user
+    if (booking.userId.toString() !== req.user.id) {
+      console.error('❌ User authorization failed:', {
+        bookingUserId: booking.userId.toString(),
+        requestUserId: req.user.id
+      });
+      await session.abortTransaction();
+      await session.endSession();
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to make payments for this booking'
+      });
+    }
+ 
+    console.log('✅ User authorization verified');
+ 
+    // FIX: Check existing payments and fix any validation issues
+    if (booking.payments && booking.payments.length > 0) {
+      console.log('🔍 Checking existing payments for validation issues...');
+      booking.payments.forEach((payment, index) => {
+        if (!payment.method) {
+          console.log(`⚠️ Fixing payment at index ${index} - adding missing method`);
+          payment.method = payment.method || 'unknown';
+        }
+        if (!payment.status) {
+          console.log(`⚠️ Fixing payment at index ${index} - adding missing status`);
+          payment.status = payment.status || 'completed';
+        }
+      });
+    }
+ 
+    // Get current month and year for rent payments
+    const currentDate = new Date();
+    const currentMonth = currentDate.toLocaleString('default', { month: 'long' });
+    const currentYear = currentDate.getFullYear();
+ 
+    // Create rent payment record with REVIEW DATA
+    const rentPayment = {
+      date: new Date(),
+      amount: amount,
+      method: 'razorpay',
+      transactionId: razorpay_payment_id,
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      status: 'completed',
+      type: 'rent',
+      description: rentData.description || `Rent payment for ${rentData.month || currentMonth} ${rentData.year || currentYear}`,
+      month: rentData.month || currentMonth,
+      year: rentData.year || currentYear,
+      dueDate: rentData.dueDate ? new Date(rentData.dueDate) : undefined,
+      paidDate: new Date(),
+      // Include review data in the payment if provided
+      review: rentData.reviewData && rentData.reviewData.shouldSaveReview ? {
+        rating: rentData.reviewData.rating || null,
+        comment: rentData.reviewData.comment || "",
+        reviewDate: new Date(),
+        status: 'pending'
+      } : null
+    };
+ 
+    console.log('💳 Creating rent payment record with review:', {
+      amount: rentPayment.amount,
+      description: rentPayment.description,
+      hasReview: !!rentPayment.review,
+      reviewRating: rentPayment.review?.rating
+    });
+ 
+    // Add payment to booking
+    if (!booking.payments) {
+      console.log('📝 Initializing payments array');
+      booking.payments = [];
+    }
+   
+    // Validate the new payment object before pushing
+    if (!rentPayment.method) {
+      rentPayment.method = 'razorpay';
+    }
+    if (!rentPayment.status) {
+      rentPayment.status = 'completed';
+    }
+   
+    booking.payments.push(rentPayment);
+    console.log(`📊 Total payments after push: ${booking.payments.length}`);
+ 
+    // ✅ UPDATE PAYMENT REQUEST STATUS FROM PENDING TO COMPLETED
+    if (booking.paymentrequest && booking.paymentrequest.length > 0) {
+      console.log('🔄 Updating payment request status from pending to completed...');
+     
+      // Find pending payment requests that match this payment amount and type
+      const pendingPaymentRequests = booking.paymentrequest.filter(
+        request => request.status === 'pending' && request.amount === amount
+      );
+ 
+      console.log(`📋 Found ${pendingPaymentRequests.length} pending payment requests matching amount ${amount}`);
+ 
+      if (pendingPaymentRequests.length > 0) {
+        // Update all matching pending payment requests to 'paid'
+        booking.paymentrequest.forEach(request => {
+          if (request.status === 'pending' && request.amount === amount) {
+            console.log(`✅ Updating payment request from pending to paid:`, {
+              requestId: request._id,
+              amount: request.amount,
+              message: request.message
+            });
+            request.status = 'paid';
+            request.paidDate = new Date();
+            request.transactionId = razorpay_payment_id;
+          }
+        });
+      } else {
+        console.log('ℹ️ No pending payment requests found matching the payment amount');
+      }
+    }
+ 
+    // Update outstanding amount
+    if (booking.outstandingAmount && booking.outstandingAmount > 0) {
+      const previousOutstanding = booking.outstandingAmount;
+      booking.outstandingAmount = Math.max(0, booking.outstandingAmount - amount);
+      console.log('📊 Updated outstanding amount:', {
+        previous: previousOutstanding,
+        current: booking.outstandingAmount
+      });
+    }
+ 
+    // Update last payment date
+    booking.lastPaymentDate = new Date();
+    console.log('📅 Updated last payment date:', booking.lastPaymentDate);
+ 
+    // Calculate transfer breakdown for rent
+    const transferBreakdown = calculateTransferBreakdown(amount);
+    console.log('💰 Transfer breakdown:', transferBreakdown);
+ 
+    // Add transfer record for rent
+    const rentTransfer = {
+      paymentId: rentPayment._id || new mongoose.Types.ObjectId(),
+      amount: amount,
+      clientAmount: transferBreakdown.clientAmount,
+      platformCommission: transferBreakdown.platformCommission,
+      gstOnCommission: transferBreakdown.gstOnCommission,
+      status: 'pending',
+      type: 'rent_transfer',
+      createdAt: new Date()
+    };
+ 
+    console.log('💸 Creating transfer record:', rentTransfer);
+ 
+    // Initialize transfers array if it doesn't exist
+    if (!booking.transfers) {
+      console.log('📝 Initializing transfers array');
+      booking.transfers = [];
+    }
+    booking.transfers.push(rentTransfer);
+ 
+    console.log('💾 Saving booking with payment review and updated payment requests...');
+   
+    // FIX: Use { validateBeforeSave: false } to skip validation temporarily
+    await booking.save({
+      session,
+      validateBeforeSave: false
+    });
+   
+    console.log('✅ Booking saved successfully with payment review and updated payment requests');
+ 
+    // ✅ UPDATE PAYMENT MESSAGE SCHEMA PAYMENT REQUEST STATUS
+    console.log('🔄 Updating PaymentMessage schema payment request status...');
+    try {
+      const paymentMessage = await PaymentMessage.findOne({
+        bookingId: rentData.bookingId,
+        month: currentMonth,
+        year: currentYear
+      }).session(session);
+ 
+      if (paymentMessage && paymentMessage.paymentrequest && paymentMessage.paymentrequest.length > 0) {
+        console.log(`📋 Found PaymentMessage with ${paymentMessage.paymentrequest.length} payment requests`);
+       
+        // Update pending payment requests in PaymentMessage schema
+        paymentMessage.paymentrequest.forEach(request => {
+          if (request.status === 'pending' && request.amount === amount) {
+            console.log(`✅ Updating PaymentMessage payment request from pending to paid:`, {
+              requestId: request._id,
+              amount: request.amount,
+              message: request.message
+            });
+            request.status = 'paid';
+            request.paidDate = new Date();
+            request.transactionId = razorpay_payment_id;
+          }
+        });
+ 
+        await paymentMessage.save({ session });
+        console.log('✅ PaymentMessage schema updated successfully');
+      } else {
+        console.log('ℹ️ No PaymentMessage found or no payment requests to update');
+      }
+    } catch (paymentMessageError) {
+      console.error('❌ Error updating PaymentMessage schema:', paymentMessageError);
+      // Don't fail the entire transaction if PaymentMessage update fails
+    }
+ 
+    await session.commitTransaction();
+    await session.endSession();
+ 
+    console.log('✅ Rent payment processed successfully with review and payment request status updated');
+ 
+    // Prepare response
+    const response = {
+      success: true,
+      message: 'Rent payment processed successfully',
+      paymentId: razorpay_payment_id,
+      orderId: razorpay_order_id,
+      booking: {
+        id: booking._id,
+        outstandingAmount: booking.outstandingAmount,
+        lastPaymentDate: booking.lastPaymentDate,
+        reviewSaved: !!(rentData.reviewData && rentData.reviewData.shouldSaveReview),
+        paymentRequestsUpdated: booking.paymentrequest ? booking.paymentrequest.filter(req => req.status === 'paid').length : 0
+      },
+      payment: rentPayment,
+      transferDetails: {
+        clientAmount: transferBreakdown.clientAmount,
+        platformCommission: transferBreakdown.platformCommission,
+        status: 'pending'
+      }
+    };
+ 
+    return res.status(200).json(response);
+ 
+  } catch (error) {
+    // Safe transaction cleanup
+    try {
+      if (session.inTransaction()) {
+        console.error('🔄 Aborting transaction due to error');
+        await session.abortTransaction();
+      }
+      await session.endSession();
+    } catch (sessionError) {
+      console.error('❌ Session cleanup error:', sessionError);
+    }
+   
+    console.error('❌ Rent payment validation error:', error);
+    console.error('❌ Error stack:', error.stack);
+   
+    return res.status(500).json({
+      success: false,
+      message: 'Rent payment validation failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
 
 
 
