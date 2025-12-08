@@ -90,6 +90,7 @@ router.get('/', (req, res) => {
     console.log('📋 Routing to client notifications');
     return getClientNotifications(req, res);
   } else {
+    
     // For all other roles (user, customer, tenant, etc.), use user notifications
     console.log('📋 Routing to user notifications');
     return getUserNotifications(req, res);

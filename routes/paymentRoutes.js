@@ -52,7 +52,10 @@ import {
   getClientPaymentsForBooking,
   getPaymentsByClientId,
   // checkRazorpayConfig,
-  initiateManualTransfer,  // Add this import
+  initiateRazorpayPayout,  // Add this import
+  initiateManualTransfer,
+   checkPayoutStatus,
+  getRazorpayBalance,
   checkTransferStatus,      // Add this import
    sendMessage,
   getClientMessages
@@ -77,7 +80,10 @@ router.get("/payments/history/:bookingId", verifyToken, getPaymentHistory);
 router.get("/payments/client-payments/:propertyId/:bookingId", verifyToken, getClientPaymentsForBooking);
 
 // Transfer routes
- router.post("/payments/transfer/initiate/:bookingId", verifyToken, protectAdmin, initiateManualTransfer);
+router.post("/razorpay/transfer/initiate/:bookingId", authorizeAdmin, protectAdmin, initiateRazorpayPayout);
+router.post("/manual/transfer/initiate/:bookingId", authorizeAdmin, protectAdmin, initiateManualTransfer); // Add this line
+router.get("/razorpay/payout/status/:payoutId", authorizeAdmin, checkPayoutStatus);
+router.get("/razorpay/balance", authorizeAdmin, protectAdmin, getRazorpayBalance);
 router.get("/transfer/status/:bookingId", verifyToken, checkTransferStatus);
 
 router.post("/payments/send-message", verifyToken, sendMessage);

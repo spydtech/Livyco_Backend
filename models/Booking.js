@@ -1949,7 +1949,6 @@
 // export default Booking;
 
 
-
 import mongoose from 'mongoose';
 
 const bookingSchema = new mongoose.Schema({
@@ -2049,7 +2048,6 @@ const bookingSchema = new mongoose.Schema({
     saveForFuture: Boolean
   },
   
-  // Payment Information
   paymentInfo: {
     paymentStatus: {
       type: String,
@@ -2071,7 +2069,6 @@ const bookingSchema = new mongoose.Schema({
     paymentDate: Date
   },
   
-  // Pricing Information
   pricing: {
     advanceAmount: Number,
     securityDeposit: Number,
@@ -2084,11 +2081,10 @@ const bookingSchema = new mongoose.Schema({
     }
   },
 
-  // Transfer Fields - FIXED: Added 'manual_pending' to enum
   transferStatus: {
     type: String,
     enum: ['pending', 'processing', 'completed', 'failed', 'pending_bank_details', 'manual_pending'],
-    default: 'manual_pending' // Changed default to manual_pending
+    default: 'manual_pending'
   },
   
   transferDetails: {
@@ -2112,7 +2108,7 @@ const bookingSchema = new mongoose.Schema({
     clientTransferProcessedAt: Date,
     completedAt: Date,
     transferError: String,
-    transferNotes: String, // Added for manual transfer notes
+    transferNotes: String,
     processedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
@@ -2130,7 +2126,6 @@ const bookingSchema = new mongoose.Schema({
     default: 'pending_payment',
   },
   
-  // Payment tracking
   payments: [{
     date: {
       type: Date,
@@ -2154,10 +2149,68 @@ const bookingSchema = new mongoose.Schema({
     description: String,
     razorpayOrderId: String,
     razorpayPaymentId: String,
-    razorpaySignature: String
+    razorpaySignature: String,
+    razorpayUTR: String,
+    review: {
+      rating: {
+        type: Number,
+        min: 1,
+        max: 5,
+        default: null
+      },
+      comment: {
+        type: String,
+        default: null
+      },
+      reviewDate: {
+        type: Date,
+        default: null
+      },
+    },
+    type: {
+      type: String,
+      enum: ['booking', 'rent', 'security_deposit', 'maintenance', 'other'],
+      default: 'rent'
+    },
+    month: String,
+    year: Number,
+    dueDate: Date,
+    paidDate: {
+      type: Date,
+      default: Date.now
+    }
   }],
-  
-  // Outstanding amount tracking
+
+  paymentrequest: [{
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    amount: {
+      type: Number,
+      required: true
+    },
+    message: {
+      type: String,
+      required: true
+    },
+    type: {
+      type: String,
+    },
+    userId: {
+      type: String,
+      required: true
+    },
+    status: {
+      type: String,
+      enum: ["pending", "paid", "cancelled"],
+      default: "pending"
+    },
+    dueDate: {
+      type: Date
+    }
+  }], 
+
   outstandingAmount: {
     type: Number,
     default: 0
@@ -2174,7 +2227,7 @@ const bookingSchema = new mongoose.Schema({
   timestamps: true 
 });
 
-// Indexes for better performance
+// Indexes
 bookingSchema.index({ propertyId: 1, moveInDate: 1 });
 bookingSchema.index({ userId: 1 });
 bookingSchema.index({ clientId: 1 });
@@ -2182,6 +2235,9 @@ bookingSchema.index({ 'paymentInfo.paymentStatus': 1 });
 bookingSchema.index({ transferStatus: 1 });
 bookingSchema.index({ bookingStatus: 1 });
 bookingSchema.index({ 'roomDetails.roomIdentifier': 1, moveInDate: 1 });
+bookingSchema.index({ 'payments.review.rating': 1 });
+bookingSchema.index({ 'payments.month': 1, 'payments.year': 1 });
+bookingSchema.index({ 'paymentrequest.status': 1 });
 
 // Calculate outstanding amount before saving
 bookingSchema.pre('save', function(next) {
@@ -2196,7 +2252,6 @@ bookingSchema.pre('save', function(next) {
     
     this.outstandingAmount = Math.max(0, totalDue - totalPaid);
     
-    // Update payment status based on outstanding amount
     if (totalPaid >= totalDue) {
       this.paymentInfo.paymentStatus = 'paid';
       this.paymentInfo.paidAmount = totalPaid;
@@ -2225,6 +2280,22 @@ bookingSchema.virtual('amountPaid').get(function() {
     .reduce((sum, payment) => sum + payment.amount, 0);
 });
 
+// Method to get payments with reviews
+bookingSchema.methods.getPaymentsWithReviews = function() {
+  return this.payments.filter(payment => payment.review && payment.review.rating);
+};
+
+// Method to get average rating from all payment reviews
+bookingSchema.methods.getAverageRating = function() {
+  const paymentsWithReviews = this.getPaymentsWithReviews();
+  if (paymentsWithReviews.length === 0) return 0;
+  
+  const totalRating = paymentsWithReviews.reduce((sum, payment) => 
+    sum + payment.review.rating, 0
+  );
+  return totalRating / paymentsWithReviews.length;
+};
+
 // Method to check if booking is active
 bookingSchema.methods.isActive = function() {
   const activeStatuses = ['confirmed', 'approved', 'checked_in'];
@@ -2241,16 +2312,9 @@ bookingSchema.methods.canBeCancelled = function() {
 bookingSchema.methods.calculateTransferAmounts = function() {
   const totalAmount = this.pricing.totalAmount || 0;
   
-  // Platform commission (5%)
   const platformCommission = totalAmount * 0.05;
-  
-  // GST on platform commission (18%)
   const gstOnCommission = platformCommission * 0.18;
-  
-  // Total platform earnings (commission + GST)
   const totalPlatformEarnings = platformCommission + gstOnCommission;
-  
-  // Client amount (total payment - platform earnings)
   const clientAmount = totalAmount - totalPlatformEarnings;
   
   return {
@@ -2268,6 +2332,12 @@ bookingSchema.methods.calculateTransferAmounts = function() {
       clientAmount: clientAmount
     }
   };
+};
+
+// Method to add payment request
+bookingSchema.methods.addPaymentRequest = function(paymentRequestData) {
+  this.paymentrequest.push(paymentRequestData);
+  return this.save();
 };
 
 const Booking = mongoose.model('Booking', bookingSchema);

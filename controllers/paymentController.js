@@ -1589,7 +1589,7 @@ try {
 
 
 
-// Room availability check function
+
 // Room availability check function
 const checkRoomAvailabilityBeforeBooking = async (propertyId, selectedRooms, moveInDate, endDate, session) => {
   const unavailableRooms = [];
@@ -1761,374 +1761,374 @@ export const createOrder = async (req, res) => {
 };
 
 // Validate payment - SIMPLIFIED AND FIXED VERSION
-export const validatePayment = async (req, res) => {
-  let session;
-  
-  try {
-    session = await mongoose.startSession();
-    await session.startTransaction();
-    
-    const { 
-      razorpay_order_id, 
-      razorpay_payment_id, 
-      razorpay_signature, 
-      bookingData 
-    } = req.body;
-
-    console.log('🔍 Starting payment validation...', {
-      order_id: razorpay_order_id,
-      payment_id: razorpay_payment_id,
-      has_booking_data: !!bookingData,
-      user_id: req.user?.id
-    });
-
-    // Validate required fields
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'Missing payment verification data'
-      });
-    }
-
-    // Verify payment signature
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(body)
-      .digest('hex');
-
-    console.log('🔐 Signature verification:', {
-      expected_length: expectedSignature.length,
-      received_length: razorpay_signature.length,
-      match: expectedSignature === razorpay_signature
-    });
-
-    if (expectedSignature !== razorpay_signature) {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'Payment verification failed - invalid signature'
-      });
-    }
-
-    console.log('✅ Payment signature verified');
-
-    // Get payment details from Razorpay
-    let payment;
-    try {
-      payment = await razorpay.payments.fetch(razorpay_payment_id);
-      console.log('✅ Payment details:', {
-        id: payment.id,
-        status: payment.status,
-        amount: payment.amount,
-        currency: payment.currency
-      });
-    } catch (razorpayError) {
-      console.error('❌ Razorpay payment fetch error:', razorpayError);
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'Failed to fetch payment details from Razorpay'
-      });
-    }
-
-    if (payment.status !== 'captured') {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'Payment not captured successfully'
-      });
-    }
-
-    const amount = payment.amount / 100; // Convert from paise to rupees
-
-    // Validate user authentication
-    if (!req.user || !req.user.id) {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
-    }
-
-    // CREATE OR UPDATE BOOKING
-    console.log('📝 Processing booking creation/update...');
-    
-    let booking;
-    
-    // If we have booking data, try to find existing pending booking
-    if (bookingData && bookingData.propertyId) {
-      booking = await Booking.findOne({
-        userId: req.user.id,
-        propertyId: bookingData.propertyId,
-        bookingStatus: 'pending_payment'
-      }).session(session);
-    }
-
-    // If no existing booking found, create a new one
-    if (!booking && bookingData) {
-      console.log('🆕 Creating new booking after payment...');
-      
-      // Get property details
-      const property = await Property.findById(bookingData.propertyId).session(session);
-      if (!property) {
-        await session.abortTransaction();
-        await session.endSession();
-        return res.status(404).json({
-          success: false,
-          message: 'Property not found'
-        });
-      }
-
-      // Process room details
-      const roomDetails = (bookingData.selectedRooms || []).map(roomIdentifier => {
+      export const validatePayment = async (req, res) => {
+        let session;
+        
         try {
-          const parts = roomIdentifier.split('-');
-          if (parts.length >= 3) {
-            const sharingType = parts[0];
-            const roomNumber = parts[1];
-            const bed = parts.slice(2).join('-');
-            
-            return {
-              roomIdentifier: roomIdentifier,
-              sharingType: sharingType,
-              floor: parseInt(roomNumber.charAt(0)) || 1,
-              roomNumber: roomNumber,
-              bed: bed
-            };
+          session = await mongoose.startSession();
+          await session.startTransaction();
+          
+          const { 
+            razorpay_order_id, 
+            razorpay_payment_id, 
+            razorpay_signature, 
+            bookingData 
+          } = req.body;
+
+          console.log('🔍 Starting payment validation...', {
+            order_id: razorpay_order_id,
+            payment_id: razorpay_payment_id,
+            has_booking_data: !!bookingData,
+            user_id: req.user?.id
+          });
+
+          // Validate required fields
+          if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            await session.abortTransaction();
+            await session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: 'Missing payment verification data'
+            });
           }
-          return {
-            roomIdentifier: roomIdentifier,
-            sharingType: bookingData.roomType || 'unknown',
-            floor: 1,
-            roomNumber: 'unknown',
-            bed: 'unknown'
+
+          // Verify payment signature
+          const body = razorpay_order_id + "|" + razorpay_payment_id;
+          const expectedSignature = crypto
+            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+            .update(body)
+            .digest('hex');
+
+          console.log('🔐 Signature verification:', {
+            expected_length: expectedSignature.length,
+            received_length: razorpay_signature.length,
+            match: expectedSignature === razorpay_signature
+          });
+
+          if (expectedSignature !== razorpay_signature) {
+            await session.abortTransaction();
+            await session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: 'Payment verification failed - invalid signature'
+            });
+          }
+
+          console.log('✅ Payment signature verified');
+
+          // Get payment details from Razorpay
+          let payment;
+          try {
+            payment = await razorpay.payments.fetch(razorpay_payment_id);
+            console.log('✅ Payment details:', {
+              id: payment.id,
+              status: payment.status,
+              amount: payment.amount,
+              currency: payment.currency
+            });
+          } catch (razorpayError) {
+            console.error('❌ Razorpay payment fetch error:', razorpayError);
+            await session.abortTransaction();
+            await session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: 'Failed to fetch payment details from Razorpay'
+            });
+          }
+
+          if (payment.status !== 'captured') {
+            await session.abortTransaction();
+            await session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: 'Payment not captured successfully'
+            });
+          }
+
+          const amount = payment.amount / 100; // Convert from paise to rupees
+
+          // Validate user authentication
+          if (!req.user || !req.user.id) {
+            await session.abortTransaction();
+            await session.endSession();
+            return res.status(401).json({
+              success: false,
+              message: 'User authentication required'
+            });
+          }
+
+          // CREATE OR UPDATE BOOKING
+          console.log('📝 Processing booking creation/update...');
+          
+          let booking;
+          
+          // If we have booking data, try to find existing pending booking
+          if (bookingData && bookingData.propertyId) {
+            booking = await Booking.findOne({
+              userId: req.user.id,
+              propertyId: bookingData.propertyId,
+              bookingStatus: 'pending_payment'
+            }).session(session);
+          }
+
+          // If no existing booking found, create a new one
+          if (!booking && bookingData) {
+            console.log('🆕 Creating new booking after payment...');
+            
+            // Get property details
+            const property = await Property.findById(bookingData.propertyId).session(session);
+            if (!property) {
+              await session.abortTransaction();
+              await session.endSession();
+              return res.status(404).json({
+                success: false,
+                message: 'Property not found'
+              });
+            }
+
+            // Process room details
+            const roomDetails = (bookingData.selectedRooms || []).map(roomIdentifier => {
+              try {
+                const parts = roomIdentifier.split('-');
+                if (parts.length >= 3) {
+                  const sharingType = parts[0];
+                  const roomNumber = parts[1];
+                  const bed = parts.slice(2).join('-');
+                  
+                  return {
+                    roomIdentifier: roomIdentifier,
+                    sharingType: sharingType,
+                    floor: parseInt(roomNumber.charAt(0)) || 1,
+                    roomNumber: roomNumber,
+                    bed: bed
+                  };
+                }
+                return {
+                  roomIdentifier: roomIdentifier,
+                  sharingType: bookingData.roomType || 'unknown',
+                  floor: 1,
+                  roomNumber: 'unknown',
+                  bed: 'unknown'
+                };
+              } catch (error) {
+                return {
+                  roomIdentifier: roomIdentifier,
+                  sharingType: bookingData.roomType || 'unknown',
+                  floor: 1,
+                  roomNumber: 'unknown',
+                  bed: 'unknown'
+                };
+              }
+            });
+
+            // Create booking data
+            const bookingDataToSave = {
+              userId: req.user.id,
+              clientId: property.clientId,
+              propertyId: bookingData.propertyId,
+              roomType: {
+                type: bookingData.roomType || 'single',
+                name: bookingData.roomType || 'Single Room',
+                capacity: parseInt(bookingData.personCount) || 1
+              },
+              roomDetails: roomDetails,
+              moveInDate: new Date(bookingData.moveInDate),
+              moveOutDate: new Date(bookingData.endDate || bookingData.moveOutDate),
+              durationType: bookingData.durationType || 'monthly',
+              durationDays: bookingData.durationDays || null,
+              durationMonths: bookingData.durationMonths || null,
+              personCount: parseInt(bookingData.personCount) || 1,
+              customerDetails: bookingData.customerDetails || {},
+              pricing: bookingData.pricing || {
+                monthlyRent: 1,
+                totalRent: 1,
+                securityDeposit: 0,
+                advanceAmount: 1,
+                totalAmount: amount,
+                maintenanceFee: 0
+              },
+              paymentInfo: {
+                paymentStatus: 'paid',
+                paymentMethod: 'razorpay',
+                transactionId: razorpay_payment_id,
+                razorpayOrderId: razorpay_order_id,
+                razorpayPaymentId: razorpay_payment_id,
+                razorpaySignature: razorpay_signature,
+                paidAmount: amount,
+                paymentDate: new Date(),
+                outstandingAmount: 0
+              },
+              bookingStatus: 'confirmed',
+              transferStatus: 'manual_pending',
+              payments: [{
+                date: new Date(),
+                amount: amount,
+                method: 'razorpay',
+                transactionId: razorpay_payment_id,
+                status: 'completed',
+                description: 'Booking payment',
+                razorpayOrderId: razorpay_order_id,
+                razorpayPaymentId: razorpay_payment_id,
+                razorpaySignature: razorpay_signature
+              }]
+            };
+
+            // Calculate transfer breakdown
+            const transferBreakdown = calculateTransferBreakdown(amount);
+            bookingDataToSave.transferDetails = {
+              totalAmount: amount,
+              platformCommission: transferBreakdown.platformCommission,
+              gstOnCommission: transferBreakdown.gstOnCommission,
+              totalPlatformEarnings: transferBreakdown.totalPlatformEarnings,
+              clientAmount: transferBreakdown.clientAmount,
+              clientTransferStatus: 'pending',
+              breakdown: transferBreakdown.breakdown,
+              transferNotes: 'Awaiting manual transfer to property owner'
+            };
+
+            booking = new Booking(bookingDataToSave);
+            await booking.save({ session });
+            console.log('✅ New booking created after payment:', booking._id);
+            
+          } else if (booking) {
+            // Update existing booking
+            console.log('🔄 Updating existing booking:', booking._id);
+            
+            booking.paymentInfo = {
+              ...booking.paymentInfo,
+              paymentStatus: 'paid',
+              transactionId: razorpay_payment_id,
+              razorpayOrderId: razorpay_order_id,
+              razorpayPaymentId: razorpay_payment_id,
+              razorpaySignature: razorpay_signature,
+              paidAmount: amount,
+              paymentDate: new Date(),
+              outstandingAmount: 0
+            };
+
+            booking.bookingStatus = 'confirmed';
+            
+            booking.payments.push({
+              date: new Date(),
+              amount: amount,
+              method: 'razorpay',
+              transactionId: razorpay_payment_id,
+              status: 'completed',
+              description: 'Booking payment',
+              razorpayOrderId: razorpay_order_id,
+              razorpayPaymentId: razorpay_payment_id,
+              razorpaySignature: razorpay_signature
+            });
+
+            // Calculate transfer breakdown
+            const transferBreakdown = calculateTransferBreakdown(amount);
+            booking.transferStatus = 'manual_pending';
+            booking.transferDetails = {
+              totalAmount: amount,
+              platformCommission: transferBreakdown.platformCommission,
+              gstOnCommission: transferBreakdown.gstOnCommission,
+              totalPlatformEarnings: transferBreakdown.totalPlatformEarnings,
+              clientAmount: transferBreakdown.clientAmount,
+              clientTransferStatus: 'pending',
+              breakdown: transferBreakdown.breakdown,
+              transferNotes: 'Awaiting manual transfer to property owner'
+            };
+
+            await booking.save({ session });
+            console.log('✅ Existing booking updated after payment');
+          } else {
+            await session.abortTransaction();
+            await session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: 'No booking data provided and no existing booking found'
+            });
+          }
+
+          await session.commitTransaction();
+          await session.endSession();
+
+          // Populate the booking for response
+          const populatedBooking = await Booking.findById(booking._id)
+            .populate('propertyId', 'name locality city images')
+            .populate('userId', 'name email');
+
+          // Create notifications
+          try {
+            await NotificationService.createBookingNotification(
+              populatedBooking,
+              'booking_paid',
+              {
+                amount: amount,
+                razorpayPaymentId: razorpay_payment_id
+              }
+            );
+            console.log('✅ Payment notification created');
+          } catch (notificationError) {
+            console.error('❌ Failed to create notification:', notificationError);
+          }
+
+          // Prepare response
+          const response = {
+            success: true,
+            message: 'Payment verified and booking confirmed successfully',
+            paymentId: razorpay_payment_id,
+            orderId: razorpay_order_id,
+            amount: amount,
+            booking: {
+              id: populatedBooking._id,
+              propertyId: populatedBooking.propertyId?._id,
+              propertyName: populatedBooking.propertyId?.name,
+              propertyLocality: populatedBooking.propertyId?.locality,
+              propertyCity: populatedBooking.propertyId?.city,
+              roomType: populatedBooking.roomType?.name,
+              rooms: populatedBooking.roomDetails,
+              moveInDate: populatedBooking.moveInDate,
+              moveOutDate: populatedBooking.moveOutDate,
+              status: populatedBooking.bookingStatus,
+              paymentStatus: populatedBooking.paymentInfo.paymentStatus,
+              totalAmount: populatedBooking.pricing.totalAmount,
+              customerDetails: populatedBooking.customerDetails
+            }
           };
+
+          console.log('🎉 Payment validation completed successfully');
+
+          return res.status(200).json(response);
+
         } catch (error) {
-          return {
-            roomIdentifier: roomIdentifier,
-            sharingType: bookingData.roomType || 'unknown',
-            floor: 1,
-            roomNumber: 'unknown',
-            bed: 'unknown'
-          };
+          // Enhanced error handling
+          try {
+            if (session && session.inTransaction()) {
+              await session.abortTransaction();
+            }
+            if (session) {
+              await session.endSession();
+            }
+          } catch (sessionError) {
+            console.error('❌ Session cleanup error:', sessionError);
+          }
+
+          console.error('❌ Payment validation error:', error.message);
+
+          let errorMessage = 'Payment validation failed';
+          let statusCode = 500;
+
+          if (error.name === 'ValidationError') {
+            errorMessage = 'Data validation error';
+            statusCode = 400;
+          } else if (error.name === 'CastError') {
+            errorMessage = 'Invalid data format';
+            statusCode = 400;
+          }
+
+          return res.status(statusCode).json({
+            success: false,
+            message: errorMessage,
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+          });
         }
-      });
-
-      // Create booking data
-      const bookingDataToSave = {
-        userId: req.user.id,
-        clientId: property.clientId,
-        propertyId: bookingData.propertyId,
-        roomType: {
-          type: bookingData.roomType || 'single',
-          name: bookingData.roomType || 'Single Room',
-          capacity: parseInt(bookingData.personCount) || 1
-        },
-        roomDetails: roomDetails,
-        moveInDate: new Date(bookingData.moveInDate),
-        moveOutDate: new Date(bookingData.endDate || bookingData.moveOutDate),
-        durationType: bookingData.durationType || 'monthly',
-        durationDays: bookingData.durationDays || null,
-        durationMonths: bookingData.durationMonths || null,
-        personCount: parseInt(bookingData.personCount) || 1,
-        customerDetails: bookingData.customerDetails || {},
-        pricing: bookingData.pricing || {
-          monthlyRent: 1,
-          totalRent: 1,
-          securityDeposit: 0,
-          advanceAmount: 1,
-          totalAmount: amount,
-          maintenanceFee: 0
-        },
-        paymentInfo: {
-          paymentStatus: 'paid',
-          paymentMethod: 'razorpay',
-          transactionId: razorpay_payment_id,
-          razorpayOrderId: razorpay_order_id,
-          razorpayPaymentId: razorpay_payment_id,
-          razorpaySignature: razorpay_signature,
-          paidAmount: amount,
-          paymentDate: new Date(),
-          outstandingAmount: 0
-        },
-        bookingStatus: 'confirmed',
-        transferStatus: 'manual_pending',
-        payments: [{
-          date: new Date(),
-          amount: amount,
-          method: 'razorpay',
-          transactionId: razorpay_payment_id,
-          status: 'completed',
-          description: 'Booking payment',
-          razorpayOrderId: razorpay_order_id,
-          razorpayPaymentId: razorpay_payment_id,
-          razorpaySignature: razorpay_signature
-        }]
       };
-
-      // Calculate transfer breakdown
-      const transferBreakdown = calculateTransferBreakdown(amount);
-      bookingDataToSave.transferDetails = {
-        totalAmount: amount,
-        platformCommission: transferBreakdown.platformCommission,
-        gstOnCommission: transferBreakdown.gstOnCommission,
-        totalPlatformEarnings: transferBreakdown.totalPlatformEarnings,
-        clientAmount: transferBreakdown.clientAmount,
-        clientTransferStatus: 'pending',
-        breakdown: transferBreakdown.breakdown,
-        transferNotes: 'Awaiting manual transfer to property owner'
-      };
-
-      booking = new Booking(bookingDataToSave);
-      await booking.save({ session });
-      console.log('✅ New booking created after payment:', booking._id);
-      
-    } else if (booking) {
-      // Update existing booking
-      console.log('🔄 Updating existing booking:', booking._id);
-      
-      booking.paymentInfo = {
-        ...booking.paymentInfo,
-        paymentStatus: 'paid',
-        transactionId: razorpay_payment_id,
-        razorpayOrderId: razorpay_order_id,
-        razorpayPaymentId: razorpay_payment_id,
-        razorpaySignature: razorpay_signature,
-        paidAmount: amount,
-        paymentDate: new Date(),
-        outstandingAmount: 0
-      };
-
-      booking.bookingStatus = 'confirmed';
-      
-      booking.payments.push({
-        date: new Date(),
-        amount: amount,
-        method: 'razorpay',
-        transactionId: razorpay_payment_id,
-        status: 'completed',
-        description: 'Booking payment',
-        razorpayOrderId: razorpay_order_id,
-        razorpayPaymentId: razorpay_payment_id,
-        razorpaySignature: razorpay_signature
-      });
-
-      // Calculate transfer breakdown
-      const transferBreakdown = calculateTransferBreakdown(amount);
-      booking.transferStatus = 'manual_pending';
-      booking.transferDetails = {
-        totalAmount: amount,
-        platformCommission: transferBreakdown.platformCommission,
-        gstOnCommission: transferBreakdown.gstOnCommission,
-        totalPlatformEarnings: transferBreakdown.totalPlatformEarnings,
-        clientAmount: transferBreakdown.clientAmount,
-        clientTransferStatus: 'pending',
-        breakdown: transferBreakdown.breakdown,
-        transferNotes: 'Awaiting manual transfer to property owner'
-      };
-
-      await booking.save({ session });
-      console.log('✅ Existing booking updated after payment');
-    } else {
-      await session.abortTransaction();
-      await session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'No booking data provided and no existing booking found'
-      });
-    }
-
-    await session.commitTransaction();
-    await session.endSession();
-
-    // Populate the booking for response
-    const populatedBooking = await Booking.findById(booking._id)
-      .populate('propertyId', 'name locality city images')
-      .populate('userId', 'name email');
-
-    // Create notifications
-    try {
-      await NotificationService.createBookingNotification(
-        populatedBooking,
-        'booking_paid',
-        {
-          amount: amount,
-          razorpayPaymentId: razorpay_payment_id
-        }
-      );
-      console.log('✅ Payment notification created');
-    } catch (notificationError) {
-      console.error('❌ Failed to create notification:', notificationError);
-    }
-
-    // Prepare response
-    const response = {
-      success: true,
-      message: 'Payment verified and booking confirmed successfully',
-      paymentId: razorpay_payment_id,
-      orderId: razorpay_order_id,
-      amount: amount,
-      booking: {
-        id: populatedBooking._id,
-        propertyId: populatedBooking.propertyId?._id,
-        propertyName: populatedBooking.propertyId?.name,
-        propertyLocality: populatedBooking.propertyId?.locality,
-        propertyCity: populatedBooking.propertyId?.city,
-        roomType: populatedBooking.roomType?.name,
-        rooms: populatedBooking.roomDetails,
-        moveInDate: populatedBooking.moveInDate,
-        moveOutDate: populatedBooking.moveOutDate,
-        status: populatedBooking.bookingStatus,
-        paymentStatus: populatedBooking.paymentInfo.paymentStatus,
-        totalAmount: populatedBooking.pricing.totalAmount,
-        customerDetails: populatedBooking.customerDetails
-      }
-    };
-
-    console.log('🎉 Payment validation completed successfully');
-
-    return res.status(200).json(response);
-
-  } catch (error) {
-    // Enhanced error handling
-    try {
-      if (session && session.inTransaction()) {
-        await session.abortTransaction();
-      }
-      if (session) {
-        await session.endSession();
-      }
-    } catch (sessionError) {
-      console.error('❌ Session cleanup error:', sessionError);
-    }
-
-    console.error('❌ Payment validation error:', error.message);
-
-    let errorMessage = 'Payment validation failed';
-    let statusCode = 500;
-
-    if (error.name === 'ValidationError') {
-      errorMessage = 'Data validation error';
-      statusCode = 400;
-    } else if (error.name === 'CastError') {
-      errorMessage = 'Invalid data format';
-      statusCode = 400;
-    }
-
-    return res.status(statusCode).json({
-      success: false,
-      message: errorMessage,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
 
 
 
@@ -2597,200 +2597,811 @@ export const getClientPaymentsForBooking = async (req, res) => {
 // razorpayController.js - Add these manual transfer functions
 
 // Manual transfer to client bank account
-export const initiateManualTransfer = async (req, res) => {
-  try {
-    const { bookingId } = req.params;
-    const { bankAccountId, notes } = req.body;
+// export const initiateManualTransfer = async (req, res) => {
+//   try {
+//     const { bookingId } = req.params;
+//     const { bankAccountId, notes } = req.body;
     
-    console.log('🔄 Initiating manual transfer for booking:', bookingId);
-    console.log('💰 Bank account ID:', bankAccountId);
-    console.log('👤 Admin ID:', req.user?.id);
+//     console.log('🔄 Initiating manual transfer for booking:', bookingId);
+//     console.log('💰 Bank account ID:', bankAccountId);
+//     console.log('👤 Admin ID:', req.user?.id);
 
-    // Validate input
-    if (!bookingId || !bankAccountId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Booking ID and Bank Account ID are required'
-      });
-    }
+//     // Validate input
+//     if (!bookingId || !bankAccountId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Booking ID and Bank Account ID are required'
+//       });
+//     }
 
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid booking ID format'
-      });
-    }
+//     // Validate ObjectId format
+//     if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid booking ID format'
+//       });
+//     }
 
-    if (!mongoose.Types.ObjectId.isValid(bankAccountId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid bank account ID format'
-      });
-    }
+//     if (!mongoose.Types.ObjectId.isValid(bankAccountId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid bank account ID format'
+//       });
+//     }
 
-    // Find the booking with proper population
-    const booking = await Booking.findById(bookingId)
-      .populate('propertyId', 'name locality address OwnerID')
-      .populate('userId', 'name email phone')
-      .populate('approvedBy', 'name')
-      .lean();
+//     // Find the booking with proper population
+//     const booking = await Booking.findById(bookingId)
+//       .populate('propertyId', 'name locality address OwnerID')
+//       .populate('userId', 'name email phone')
+//       .populate('approvedBy', 'name')
+//       .lean();
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
-    }
+//     if (!booking) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Booking not found'
+//       });
+//     }
 
-    console.log('📋 Booking found:', {
-      id: booking._id,
-      property: booking.propertyId?.name,
-      status: booking.bookingStatus,
-      transferStatus: booking.transferStatus
-    });
+//     console.log('📋 Booking found:', {
+//       id: booking._id,
+//       property: booking.propertyId?.name,
+//       status: booking.bookingStatus,
+//       transferStatus: booking.transferStatus
+//     });
 
-    // Check if booking is eligible for transfer
-    if (booking.paymentInfo?.paymentStatus !== 'paid' && booking.paymentInfo?.paymentStatus !== 'partial') {
-      return res.status(400).json({
-        success: false,
-        message: 'Booking payment is not completed. Cannot initiate transfer.'
-      });
-    }
+//     // Check if booking is eligible for transfer
+//     if (booking.paymentInfo?.paymentStatus !== 'paid' && booking.paymentInfo?.paymentStatus !== 'partial') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Booking payment is not completed. Cannot initiate transfer.'
+//       });
+//     }
 
-    // Find the bank account
-    const bankAccount = await BankAccount.findById(bankAccountId).lean();
+//     // Find the bank account
+//     const bankAccount = await BankAccount.findById(bankAccountId).lean();
     
-    if (!bankAccount) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bank account not found'
-      });
-    }
+//     if (!bankAccount) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Bank account not found'
+//       });
+//     }
 
-    console.log('🏦 Bank account found:', {
-      holder: bankAccount.accountHolderName,
-      account: bankAccount.accountNumber,
-      bank: bankAccount.bankName,
-      ifsc: bankAccount.ifscCode || bankAccount.ifsc
-    });
+//     console.log('🏦 Bank account found:', {
+//       holder: bankAccount.accountHolderName,
+//       account: bankAccount.accountNumber,
+//       bank: bankAccount.bankName,
+//       ifsc: bankAccount.ifscCode || bankAccount.ifsc
+//     });
 
-    // Calculate transfer amounts
-    const transferAmounts = calculateTransferAmounts(booking);
-    const transferAmount = transferAmounts.clientAmount;
+//     // Calculate transfer amounts
+//     const transferAmounts = calculateTransferAmounts(booking);
+//     const transferAmount = transferAmounts.clientAmount;
 
-    if (transferAmount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid transfer amount'
-      });
-    }
+//     if (transferAmount <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid transfer amount'
+//       });
+//     }
 
-    console.log('💰 Transfer amount calculation:', {
-      totalAmount: booking.pricing?.totalAmount,
-      clientAmount: transferAmount,
-      platformCommission: transferAmounts.platformCommission,
-      gstOnCommission: transferAmounts.gstOnCommission
-    });
+//     console.log('💰 Transfer amount calculation:', {
+//       totalAmount: booking.pricing?.totalAmount,
+//       clientAmount: transferAmount,
+//       platformCommission: transferAmounts.platformCommission,
+//       gstOnCommission: transferAmounts.gstOnCommission
+//     });
 
-    // Create transfer record
-    const transferRecord = new Transfer({
-      bookingId: booking._id,
-      clientId: booking.clientId,
-      propertyId: booking.propertyId?._id || booking.propertyId,
-      bankAccountId: bankAccount._id,
-      amount: transferAmount,
-      currency: 'INR',
-      status: 'initiated',
-      initiatedBy: req.user.id,
-      notes: notes || `Manual transfer for booking ${booking._id}`,
-      transferDetails: {
-        accountHolderName: bankAccount.accountHolderName,
-        accountNumber: bankAccount.accountNumber,
-        bankName: bankAccount.bankName,
-        ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
-        branchName: bankAccount.branchName
-      },
-      manualTransfer: true
-    });
+//     // Create transfer record
+//     const transferRecord = new Transfer({
+//       bookingId: booking._id,
+//       clientId: booking.clientId,
+//       propertyId: booking.propertyId?._id || booking.propertyId,
+//       bankAccountId: bankAccount._id,
+//       amount: transferAmount,
+//       currency: 'INR',
+//       status: 'initiated',
+//       initiatedBy: req.user.id,
+//       notes: notes || `Manual transfer for booking ${booking._id}`,
+//       transferDetails: {
+//         accountHolderName: bankAccount.accountHolderName,
+//         accountNumber: bankAccount.accountNumber,
+//         bankName: bankAccount.bankName,
+//         ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+//         branchName: bankAccount.branchName
+//       },
+//       manualTransfer: true
+//     });
 
-    await transferRecord.save();
+//     await transferRecord.save();
 
-    console.log('✅ Transfer record created:', transferRecord._id);
+//     console.log('✅ Transfer record created:', transferRecord._id);
 
-    // Update booking transfer status and details
-    await Booking.findByIdAndUpdate(bookingId, {
-      $set: {
-        transferStatus: 'processing',
-        'transferDetails.clientAmount': transferAmount,
-        'transferDetails.platformCommission': transferAmounts.platformCommission,
-        'transferDetails.gstOnCommission': transferAmounts.gstOnCommission,
-        'transferDetails.totalPlatformEarnings': transferAmounts.totalPlatformEarnings,
-        'transferDetails.clientTransferStatus': 'processing',
-        'transferDetails.bankAccount': {
-          accountNumber: bankAccount.accountNumber,
-          bankName: bankAccount.bankName,
-          ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
-          accountHolderName: bankAccount.accountHolderName
-        },
-        'transferDetails.transferNotes': notes || `Manual transfer initiated by admin`,
-        'transferDetails.processedBy': req.user.id,
-        'transferDetails.processedAt': new Date(),
-        'transferDetails.breakdown': transferAmounts.breakdown
-      }
-    });
+//     // Update booking transfer status and details
+//     await Booking.findByIdAndUpdate(bookingId, {
+//       $set: {
+//         transferStatus: 'processing',
+//         'transferDetails.clientAmount': transferAmount,
+//         'transferDetails.platformCommission': transferAmounts.platformCommission,
+//         'transferDetails.gstOnCommission': transferAmounts.gstOnCommission,
+//         'transferDetails.totalPlatformEarnings': transferAmounts.totalPlatformEarnings,
+//         'transferDetails.clientTransferStatus': 'processing',
+//         'transferDetails.bankAccount': {
+//           accountNumber: bankAccount.accountNumber,
+//           bankName: bankAccount.bankName,
+//           ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+//           accountHolderName: bankAccount.accountHolderName
+//         },
+//         'transferDetails.transferNotes': notes || `Manual transfer initiated by admin`,
+//         'transferDetails.processedBy': req.user.id,
+//         'transferDetails.processedAt': new Date(),
+//         'transferDetails.breakdown': transferAmounts.breakdown
+//       }
+//     });
 
-    // Prepare response
-    const response = {
-      success: true,
-      message: 'Manual transfer initiated successfully',
-      transferDetails: {
-        id: transferRecord._id,
-        bookingId: transferRecord.bookingId,
-        amount: transferRecord.amount,
-        status: transferRecord.status,
-        bankAccount: {
-          holder: bankAccount.accountHolderName,
-          account: bankAccount.accountNumber,
-          bank: bankAccount.bankName,
-          ifsc: bankAccount.ifscCode || bankAccount.ifsc
-        },
-        initiatedAt: transferRecord.createdAt,
-        notes: transferRecord.notes,
-        calculatedAmounts: transferAmounts.breakdown
-      }
-    };
+//     // Prepare response
+//     const response = {
+//       success: true,
+//       message: 'Manual transfer initiated successfully',
+//       transferDetails: {
+//         id: transferRecord._id,
+//         bookingId: transferRecord.bookingId,
+//         amount: transferRecord.amount,
+//         status: transferRecord.status,
+//         bankAccount: {
+//           holder: bankAccount.accountHolderName,
+//           account: bankAccount.accountNumber,
+//           bank: bankAccount.bankName,
+//           ifsc: bankAccount.ifscCode || bankAccount.ifsc
+//         },
+//         initiatedAt: transferRecord.createdAt,
+//         notes: transferRecord.notes,
+//         calculatedAmounts: transferAmounts.breakdown
+//       }
+//     };
 
-    console.log('✅ Manual transfer initiated successfully');
-    res.status(200).json(response);
+//     console.log('✅ Manual transfer initiated successfully');
+//     res.status(200).json(response);
 
-  } catch (error) {
-    console.error('❌ Manual transfer error:', error);
-    console.error('❌ Error stack:', error.stack);
+//   } catch (error) {
+//     console.error('❌ Manual transfer error:', error);
+//     console.error('❌ Error stack:', error.stack);
     
-    // More detailed error logging
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid booking ID or bank account ID format'
-      });
-    }
+//     // More detailed error logging
+//     if (error.name === 'CastError') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid booking ID or bank account ID format'
+//       });
+//     }
 
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Data validation failed',
-        error: error.message
-      });
-    }
+//     if (error.name === 'ValidationError') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Data validation failed',
+//         error: error.message
+//       });
+//     }
 
-    res.status(500).json({
-      success: false,
-      message: 'Failed to initiate manual transfer',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-};
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to initiate manual transfer',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+//     });
+//   }
+// };
+
+// Initiate Razorpay Payout to Client's Bank Account
+// export const initiateRazorpayPayout = async (req, res) => {
+//   console.log('💰 INITIATING RAZORPAY PAYOUT');
+//   console.log('📦 Request body:', req.body);
+//   console.log('📦 Request params:', req.params);
+//   console.log('👤 User:', req.user?.id);
+  
+//   try {
+//     const { bookingId } = req.params;
+//     const { paymentId, bankAccountId, notes } = req.body;
+    
+//     console.log('🔄 Initiating Razorpay payout:', {
+//       bookingId,
+//       paymentId,
+//       bankAccountId,
+//       adminId: req.user?.id
+//     });
+
+//     // Validate input
+//     if (!bookingId || !paymentId || !bankAccountId) {
+//       console.log('❌ Missing required fields:', { bookingId, paymentId, bankAccountId });
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Booking ID, Payment ID and Bank Account ID are required'
+//       });
+//     }
+
+//     // Validate ObjectId format
+//     if (!mongoose.Types.ObjectId.isValid(bookingId) || 
+//         !mongoose.Types.ObjectId.isValid(paymentId) || 
+//         !mongoose.Types.ObjectId.isValid(bankAccountId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid ID format'
+//       });
+//     }
+
+//     console.log('🔍 Looking for booking:', bookingId);
+    
+//     // Find the booking
+//     const booking = await Booking.findById(bookingId)
+//       .populate('propertyId', 'name locality address OwnerID')
+//       .lean();
+
+//     if (!booking) {
+//       console.log('❌ Booking not found:', bookingId);
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Booking not found'
+//       });
+//     }
+
+//     console.log('✅ Booking found:', {
+//       id: booking._id,
+//       property: booking.propertyId?.name,
+//       clientId: booking.clientId
+//     });
+
+//     // Find the specific payment
+//     const payment = booking.payments?.find(p => 
+//       p._id?.toString() === paymentId.toString()
+//     );
+
+//     if (!payment) {
+//       console.log('❌ Payment not found in booking:', paymentId);
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Payment not found in booking'
+//       });
+//     }
+
+//     console.log('✅ Payment found:', {
+//       id: payment._id,
+//       amount: payment.amount,
+//       status: payment.status,
+//       transferStatus: payment.transferStatus
+//     });
+
+//     if (payment.status !== 'completed') {
+//       console.log('❌ Payment not completed:', payment.status);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Payment is not completed. Cannot initiate transfer.'
+//       });
+//     }
+
+//     if (payment.transferStatus === 'completed') {
+//       console.log('❌ Transfer already completed for this payment');
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Transfer already completed for this payment'
+//       });
+//     }
+
+//     console.log('🔍 Looking for bank account:', bankAccountId);
+    
+//     // Find the bank account
+//     const bankAccount = await BankAccount.findById(bankAccountId).lean();
+    
+//     if (!bankAccount) {
+//       console.log('❌ Bank account not found:', bankAccountId);
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Bank account not found'
+//       });
+//     }
+
+//     console.log('✅ Bank account found:', {
+//       holder: bankAccount.accountHolderName,
+//       account: bankAccount.accountNumber,
+//       bank: bankAccount.bankName,
+//       ifsc: bankAccount.ifscCode || bankAccount.ifsc,
+//       isVerified: bankAccount.isVerified
+//     });
+
+//     // Verify bank account is validated
+//     if (!bankAccount.isVerified) {
+//       console.log('⚠️ Bank account not verified');
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Bank account must be verified before initiating transfer'
+//       });
+//     }
+
+//     // Calculate transfer amounts
+//     const paymentAmount = payment.amount || 0;
+//     console.log('💰 Payment amount:', paymentAmount);
+    
+//     const transferAmounts = calculateTransferAmountsForPayment(paymentAmount);
+//     console.log('💰 Transfer amounts calculated:', transferAmounts);
+
+//     if (transferAmounts.clientAmount <= 0) {
+//       console.log('❌ Invalid transfer amount:', transferAmounts.clientAmount);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid transfer amount'
+//       });
+//     }
+
+//     // Convert amount to paise (Razorpay works in paise)
+//     const amountInPaise = Math.round(transferAmounts.clientAmount * 100);
+    
+//     // Check minimum amount for Razorpay payout (100 paise = 1 INR)
+//     if (amountInPaise < 100) {
+//       console.log('❌ Amount too low for Razorpay payout:', amountInPaise);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Transfer amount must be at least ₹1'
+//       });
+//     }
+
+//     console.log('💰 Amount in paise for Razorpay:', amountInPaise);
+
+//     // Check if Razorpay is initialized
+//     if (!razorpay) {
+//       console.log('❌ Razorpay not initialized');
+//       return createManualTransferRecord(req, res, booking, payment, bankAccount, transferAmounts, notes);
+//     }
+
+//     // Prepare Razorpay payout data
+//     const payoutData = {
+//       account_number: bankAccount.accountNumber,
+//       fund_account: {
+//         account_type: 'bank_account',
+//         bank_account: {
+//           name: bankAccount.accountHolderName,
+//           ifsc: bankAccount.ifscCode || bankAccount.ifsc,
+//           account_number: bankAccount.accountNumber
+//         },
+//         contact: {
+//           name: bankAccount.accountHolderName,
+//           email: req.user?.email || 'admin@example.com',
+//           contact: req.user?.phone || '9999999999',
+//           type: 'self'
+//         }
+//       },
+//       mode: amountInPaise >= 200000 ? 'NEFT' : 'IMPS', // Use NEFT for larger amounts
+//       amount: amountInPaise,
+//       currency: 'INR',
+//       purpose: 'payout',
+//       queue_if_low_balance: true,
+//       reference_id: `payout_${Date.now()}_${booking._id.toString().substring(0, 8)}`,
+//       narration: `Payment transfer for booking ${booking._id} - Payment ${payment._id}`
+//     };
+
+//     console.log('📤 Razorpay payout data:', {
+//       amount: payoutData.amount,
+//       account_number: payoutData.account_number.substring(0, 4) + '****',
+//       reference_id: payoutData.reference_id,
+//       mode: payoutData.mode
+//     });
+
+//     // Create Razorpay payout
+//     let razorpayPayout;
+//     try {
+//       console.log('🔄 Creating Razorpay payout...');
+//       razorpayPayout = await razorpay.payouts.create(payoutData);
+//       console.log('✅ Razorpay payout created:', {
+//         id: razorpayPayout.id,
+//         status: razorpayPayout.status,
+//         amount: razorpayPayout.amount
+//       });
+//     } catch (razorpayError) {
+//       console.error('❌ Razorpay payout error:', {
+//         statusCode: razorpayError.statusCode,
+//         error: razorpayError.error,
+//         description: razorpayError.error?.description,
+//         code: razorpayError.error?.code
+//       });
+      
+//       // Handle specific Razorpay errors
+//       if (razorpayError.error?.code === 'BAD_REQUEST_ERROR') {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Razorpay error: ${razorpayError.error.description}`,
+//           code: razorpayError.error.code,
+//           details: razorpayError.error
+//         });
+//       }
+      
+//       if (razorpayError.error?.code === 'UNAUTHORIZED_ERROR') {
+//         return res.status(401).json({
+//           success: false,
+//           message: 'Invalid Razorpay credentials',
+//           code: razorpayError.error.code
+//         });
+//       }
+      
+//       // Fallback to manual transfer if Razorpay fails
+//       console.log('⚠️ Razorpay payout failed, creating manual transfer record');
+//       return createManualTransferRecord(req, res, booking, payment, bankAccount, transferAmounts, notes);
+//     }
+
+//     // Create transfer record in database
+//     const transferRecord = new Transfer({
+//       bookingId: booking._id,
+//       paymentId: payment._id,
+//       clientId: booking.clientId,
+//       propertyId: booking.propertyId?._id || booking.propertyId,
+//       bankAccountId: bankAccount._id,
+//       amount: transferAmounts.clientAmount,
+//       currency: 'INR',
+//       status: razorpayPayout.status || 'processing',
+//       initiatedBy: req.user?.id,
+//       notes: notes || `Razorpay payout for payment ${payment._id}`,
+//       razorpayPayoutId: razorpayPayout.id,
+//       transferDetails: {
+//         accountHolderName: bankAccount.accountHolderName,
+//         accountNumber: bankAccount.accountNumber,
+//         bankName: bankAccount.bankName,
+//         ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+//         branchName: bankAccount.branchName,
+//         paymentAmount: paymentAmount,
+//         platformCommission: transferAmounts.platformCommission,
+//         gstOnCommission: transferAmounts.gstOnCommission,
+//         totalPlatformEarnings: transferAmounts.totalPlatformEarnings,
+//         razorpayData: {
+//           payoutId: razorpayPayout.id,
+//           status: razorpayPayout.status,
+//           utr: razorpayPayout.utr,
+//           fees: razorpayPayout.fees,
+//           tax: razorpayPayout.tax,
+//           mode: razorpayPayout.mode,
+//           reference_id: razorpayPayout.reference_id
+//         }
+//       },
+//       razorpayTransfer: true
+//     });
+
+//     await transferRecord.save();
+//     console.log('✅ Transfer record created:', transferRecord._id);
+
+//     // Update the payment's transfer status
+//     console.log('🔄 Updating payment transfer status...');
+//     const result = await Booking.findOneAndUpdate(
+//       { 
+//         _id: bookingId,
+//         'payments._id': paymentId 
+//       },
+//       {
+//         $set: {
+//           'payments.$.transferStatus': razorpayPayout.status === 'processed' ? 'completed' : 'processing',
+//           'payments.$.transferDetails': {
+//             clientAmount: transferAmounts.clientAmount,
+//             platformCommission: transferAmounts.platformCommission,
+//             gstOnCommission: transferAmounts.gstOnCommission,
+//             totalPlatformEarnings: transferAmounts.totalPlatformEarnings,
+//             bankAccountUsed: {
+//               accountNumber: bankAccount.accountNumber,
+//               bankName: bankAccount.bankName,
+//               ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+//               accountHolderName: bankAccount.accountHolderName
+//             },
+//             transferNotes: notes || `Razorpay payout initiated by admin`,
+//             processedBy: req.user?.id,
+//             processedAt: new Date(),
+//             razorpayPayoutId: razorpayPayout.id,
+//             razorpayStatus: razorpayPayout.status,
+//             razorpayUTR: razorpayPayout.utr,
+//             breakdown: transferAmounts.breakdown
+//           }
+//         }
+//       },
+//       { new: true }
+//     );
+
+//     if (!result) {
+//       console.log('❌ Failed to update payment');
+//       throw new Error('Failed to update payment transfer status');
+//     }
+
+//     console.log('✅ Payment updated successfully');
+
+//     // Calculate overall transfer status
+//     const updatedBooking = await Booking.findById(bookingId);
+//     const completedPayments = updatedBooking.payments?.filter(p => p.status === 'completed') || [];
+//     const transferredPayments = completedPayments.filter(p => p.transferStatus === 'completed');
+    
+//     let overallTransferStatus = 'pending';
+//     if (transferredPayments.length === 0) {
+//       overallTransferStatus = 'pending';
+//     } else if (transferredPayments.length === completedPayments.length) {
+//       overallTransferStatus = 'completed';
+//     } else {
+//       overallTransferStatus = 'partial';
+//     }
+
+//     await Booking.findByIdAndUpdate(bookingId, {
+//       transferStatus: overallTransferStatus,
+//       'transferDetails.clientTransferStatus': overallTransferStatus
+//     });
+
+//     console.log('✅ Overall transfer status updated:', overallTransferStatus);
+
+//     // Send notification to property owner
+//     try {
+//       await NotificationService.createTransferNotification(
+//         booking.clientId,
+//         'transfer_initiated',
+//         transferAmounts.clientAmount,
+//         bookingId,
+//         {
+//           payoutId: razorpayPayout.id,
+//           status: razorpayPayout.status,
+//           bankAccount: bankAccount.accountNumber.substring(bankAccount.accountNumber.length - 4)
+//         }
+//       );
+//       console.log('✅ Transfer notification created');
+//     } catch (notificationError) {
+//       console.error('❌ Failed to create notification:', notificationError);
+//     }
+
+//     // Prepare response
+//     const response = {
+//       success: true,
+//       message: razorpayPayout.status === 'processed' 
+//         ? 'Payment transferred successfully via Razorpay!' 
+//         : 'Razorpay payout initiated successfully',
+//       transferDetails: {
+//         id: transferRecord._id,
+//         bookingId: transferRecord.bookingId,
+//         paymentId: transferRecord.paymentId,
+//         amount: transferRecord.amount,
+//         status: transferRecord.status,
+//         razorpayPayoutId: razorpayPayout.id,
+//         razorpayStatus: razorpayPayout.status,
+//         razorpayUTR: razorpayPayout.utr,
+//         bankAccount: {
+//           holder: bankAccount.accountHolderName,
+//           account: bankAccount.accountNumber.substring(0, 4) + '****' + bankAccount.accountNumber.substring(bankAccount.accountNumber.length - 4),
+//           bank: bankAccount.bankName,
+//           ifsc: bankAccount.ifscCode || bankAccount.ifsc
+//         },
+//         initiatedAt: transferRecord.createdAt,
+//         notes: transferRecord.notes,
+//         paymentDetails: {
+//           amount: paymentAmount,
+//           type: payment.type || 'booking',
+//           date: payment.date
+//         },
+//         calculatedAmounts: transferAmounts.breakdown,
+//         fees: razorpayPayout.fees ? razorpayPayout.fees / 100 : 0,
+//         tax: razorpayPayout.tax ? razorpayPayout.tax / 100 : 0,
+//         mode: razorpayPayout.mode
+//       }
+//     };
+
+//     console.log('✅ Razorpay payout initiated successfully');
+//     console.log('📤 Sending response:', {
+//       success: response.success,
+//       message: response.message,
+//       amount: response.transferDetails.amount,
+//       payoutId: response.transferDetails.razorpayPayoutId
+//     });
+    
+//     res.status(200).json(response);
+
+//   } catch (error) {
+//     console.error('❌ Razorpay payout error:', error.message);
+//     console.error('❌ Error stack:', error.stack);
+    
+//     // More detailed error handling
+//     if (error.name === 'CastError') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid ID format',
+//         error: error.message
+//       });
+//     }
+
+//     if (error.name === 'ValidationError') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Data validation failed',
+//         error: error.message
+//       });
+//     }
+
+//     if (error.name === 'MongoError' || error.name === 'MongoServerError') {
+//       return res.status(500).json({
+//         success: false,
+//         message: 'Database error occurred',
+//         error: error.message
+//       });
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to initiate Razorpay payout',
+//       error: error.message,
+//       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+//     });
+//   }
+// };
+
+// Fallback function for manual transfer (if Razorpay fails)
+// const createManualTransferRecord = async (req, res, booking, payment, bankAccount, transferAmounts, notes) => {
+//   try {
+//     console.log('📝 Creating manual transfer record...');
+    
+//     const transferRecord = new Transfer({
+//       bookingId: booking._id,
+//       paymentId: payment._id,
+//       clientId: booking.clientId,
+//       propertyId: booking.propertyId?._id || booking.propertyId,
+//       bankAccountId: bankAccount._id,
+//       amount: transferAmounts.clientAmount,
+//       currency: 'INR',
+//       status: 'manual_pending',
+//       initiatedBy: req.user?.id,
+//       notes: notes || `Manual transfer for payment ${payment._id} (Razorpay fallback)`,
+//       transferDetails: {
+//         accountHolderName: bankAccount.accountHolderName,
+//         accountNumber: bankAccount.accountNumber,
+//         bankName: bankAccount.bankName,
+//         ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+//         branchName: bankAccount.branchName,
+//         paymentAmount: payment.amount || 0,
+//         platformCommission: transferAmounts.platformCommission,
+//         gstOnCommission: transferAmounts.gstOnCommission,
+//         totalPlatformEarnings: transferAmounts.totalPlatformEarnings
+//       },
+//       manualTransfer: true
+//     });
+
+//     await transferRecord.save();
+
+//     // Update payment status
+//     await Booking.findOneAndUpdate(
+//       { 
+//         _id: booking._id,
+//         'payments._id': payment._id 
+//       },
+//       {
+//         $set: {
+//           'payments.$.transferStatus': 'manual_pending',
+//           'payments.$.transferDetails': {
+//             clientAmount: transferAmounts.clientAmount,
+//             platformCommission: transferAmounts.platformCommission,
+//             gstOnCommission: transferAmounts.gstOnCommission,
+//             totalPlatformEarnings: transferAmounts.totalPlatformEarnings,
+//             bankAccountUsed: {
+//               accountNumber: bankAccount.accountNumber,
+//               bankName: bankAccount.bankName,
+//               ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+//               accountHolderName: bankAccount.accountHolderName
+//             },
+//             transferNotes: notes || `Manual transfer initiated (Razorpay fallback)`,
+//             processedBy: req.user?.id,
+//             processedAt: new Date(),
+//             breakdown: transferAmounts.breakdown
+//           }
+//         }
+//       }
+//     );
+
+//     res.status(200).json({
+//       success: true,
+//       message: 'Manual transfer record created (Razorpay service unavailable)',
+//       transferDetails: {
+//         id: transferRecord._id,
+//         bookingId: transferRecord.bookingId,
+//         paymentId: transferRecord.paymentId,
+//         amount: transferRecord.amount,
+//         status: transferRecord.status,
+//         bankAccount: {
+//           holder: bankAccount.accountHolderName,
+//           account: bankAccount.accountNumber.substring(0, 4) + '****',
+//           bank: bankAccount.bankName,
+//           ifsc: bankAccount.ifscCode || bankAccount.ifsc
+//         },
+//         initiatedAt: transferRecord.createdAt,
+//         notes: transferRecord.notes,
+//         paymentDetails: {
+//           amount: payment.amount || 0,
+//           type: payment.type || 'booking',
+//           date: payment.date
+//         },
+//         calculatedAmounts: transferAmounts.breakdown
+//       }
+//     });
+
+//   } catch (manualError) {
+//     console.error('❌ Manual transfer creation error:', manualError);
+//     throw manualError;
+//   }
+// };
+
+// Check payout status
+// export const checkPayoutStatus = async (req, res) => {
+//   try {
+//     const { payoutId } = req.params;
+    
+//     if (!payoutId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Payout ID is required'
+//       });
+//     }
+
+//     console.log('🔍 Checking Razorpay payout status:', payoutId);
+    
+//     const payout = await razorpay.payouts.fetch(payoutId);
+    
+//     res.status(200).json({
+//       success: true,
+//       payout: {
+//         id: payout.id,
+//         amount: payout.amount / 100, // Convert from paise to rupees
+//         status: payout.status,
+//         utr: payout.utr,
+//         fees: payout.fees ? payout.fees / 100 : 0,
+//         tax: payout.tax ? payout.tax / 100 : 0,
+//         mode: payout.mode,
+//         purpose: payout.purpose,
+//         created_at: payout.created_at,
+//         processed_at: payout.processed_at,
+//         reference_id: payout.reference_id
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Check payout status error:', error);
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to check payout status',
+//       error: error.message
+//     });
+//   }
+// };
+
+// Get Razorpay account balance
+// export const getRazorpayBalance = async (req, res) => {
+//   try {
+//     console.log('💰 Checking Razorpay account balance...');
+    
+//     if (!razorpay) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Razorpay not initialized'
+//       });
+//     }
+    
+//     const balance = await razorpay.balance.current();
+    
+//     res.status(200).json({
+//       success: true,
+//       balance: {
+//         available: balance.available ? balance.available.map(b => ({
+//           currency: b.currency,
+//           amount: b.amount / 100 // Convert from paise to rupees
+//         })) : [],
+//         onHold: balance.on_hold ? balance.on_hold.map(b => ({
+//           currency: b.currency,
+//           amount: b.amount / 100
+//         })) : []
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Get Razorpay balance error:', error);
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch Razorpay balance',
+//       error: error.message
+//     });
+//   }
+// };
 
 // Helper function to calculate transfer amounts
 const calculateTransferAmounts = (booking) => {
@@ -2827,82 +3438,120 @@ const calculateTransferAmounts = (booking) => {
 // Helper function to calculate transfer amounts
 
 // Get transfer details for a booking
-export const getTransferDetails = async (req, res) => {
-  try {
-    const { bookingId } = req.params;
+// export const getTransferDetails = async (req, res) => {
+//   try {
+//     const { bookingId } = req.params;
 
-    const booking = await Booking.findById(bookingId)
-      .populate('propertyId', 'name ownerId')
-      .populate('userId', 'name email')
-      .populate('transferDetails.processedBy', 'name email');
+//     const booking = await Booking.findById(bookingId)
+//       .populate('propertyId', 'name ownerId')
+//       .populate('userId', 'name email')
+//       .populate('transferDetails.processedBy', 'name email');
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
-    }
+//     if (!booking) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Booking not found'
+//       });
+//     }
 
-    const transferDetails = {
-      bookingId: booking._id,
-      propertyId: booking.propertyId?._id,
-      propertyName: booking.propertyId?.name,
-      clientId: booking.propertyId?.ownerId || booking.clientId,
-      customerName: booking.customerDetails?.primary?.name,
-      amount: booking.transferDetails?.clientAmount || 0,
-      platformCommission: booking.transferDetails?.platformCommission || 0,
-      totalPlatformEarnings: booking.transferDetails?.totalPlatformEarnings || 0,
-      transferStatus: booking.transferStatus,
-      paymentStatus: booking.paymentInfo?.paymentStatus,
-      bankAccountUsed: booking.transferDetails?.bankAccountUsed,
-      transferNotes: booking.transferDetails?.transferNotes,
-      processedBy: booking.transferDetails?.processedBy,
-      processedAt: booking.transferDetails?.processedAt,
-      transferCompletedAt: booking.transferDetails?.transferCompletedAt,
-      createdAt: booking.createdAt
-    };
+//     const transferDetails = {
+//       bookingId: booking._id,
+//       propertyId: booking.propertyId?._id,
+//       propertyName: booking.propertyId?.name,
+//       clientId: booking.propertyId?.ownerId || booking.clientId,
+//       customerName: booking.customerDetails?.primary?.name,
+//       amount: booking.transferDetails?.clientAmount || 0,
+//       platformCommission: booking.transferDetails?.platformCommission || 0,
+//       totalPlatformEarnings: booking.transferDetails?.totalPlatformEarnings || 0,
+//       transferStatus: booking.transferStatus,
+//       paymentStatus: booking.paymentInfo?.paymentStatus,
+//       bankAccountUsed: booking.transferDetails?.bankAccountUsed,
+//       transferNotes: booking.transferDetails?.transferNotes,
+//       processedBy: booking.transferDetails?.processedBy,
+//       processedAt: booking.transferDetails?.processedAt,
+//       transferCompletedAt: booking.transferDetails?.transferCompletedAt,
+//       createdAt: booking.createdAt
+//     };
 
-    res.status(200).json({
-      success: true,
-      transferDetails
-    });
+//     res.status(200).json({
+//       success: true,
+//       transferDetails
+//     });
 
-  } catch (error) {
-    console.error('Get transfer details error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch transfer details'
-    });
-  }
-};
+//   } catch (error) {
+//     console.error('Get transfer details error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch transfer details'
+//     });
+//   }
+// };
 // Check transfer status
-export const checkTransferStatus = async (req, res) => {
-  try {
-    const { bookingId } = req.params;
+// export const checkTransferStatus = async (req, res) => {
+//   try {
+//     const { bookingId } = req.params;
 
-    const booking = await Booking.findById(bookingId);
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
-    }
+//     const booking = await Booking.findById(bookingId);
+//     if (!booking) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Booking not found'
+//       });
+//     }
 
-    res.status(200).json({
-      success: true,
-      transferStatus: booking.transferStatus,
-      transferDetails: booking.transferDetails
-    });
+//     res.status(200).json({
+//       success: true,
+//       transferStatus: booking.transferStatus,
+//       transferDetails: booking.transferDetails
+//     });
 
-  } catch (error) {
-    console.error('Check transfer status error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to check transfer status'
-    });
-  }
-};
+//   } catch (error) {
+//     console.error('Check transfer status error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to check transfer status'
+//     });
+//   }
+// };
 
+
+// export const checkTransferStatus = async (req, res) => {
+//   try {
+//     const { bookingId } = req.params;
+
+//     const booking = await Booking.findById(bookingId);
+//     if (!booking) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Booking not found'
+//       });
+//     }
+
+//     // Calculate payment-wise transfer status
+//     const paymentTransfers = booking.payments.map(payment => ({
+//       paymentId: payment._id,
+//       amount: payment.amount,
+//       date: payment.date,
+//       status: payment.status,
+//       transferStatus: payment.transferStatus,
+//       transferDetails: payment.transferDetails
+//     }));
+
+//     res.status(200).json({
+//       success: true,
+//       transferStatus: booking.transferStatus,
+//       transferDetails: booking.transferDetails,
+//       paymentTransfers: paymentTransfers
+//     });
+
+//   } catch (error) {
+//     console.error('Check transfer status error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to check transfer status'
+//     });
+//   }
+// };
 // Send payment request to user
 export const sendPaymentRequest = async (req, res) => {
   try {
@@ -2971,6 +3620,14 @@ export const checkRazorpayConfig = async (req, res) => {
       return res.status(500).json({
         success: false,
         message: 'Razorpay credentials not configured'
+      });
+    }
+
+    // Check if Razorpay is initialized
+    if (!razorpay) {
+      return res.status(500).json({
+        success: false,
+        message: 'Razorpay instance not created'
       });
     }
 
@@ -3048,5 +3705,1044 @@ export const getClientMessages = async (req, res) => {
   } catch (error) {
     console.error("Error fetching client messages:", error);
     res.status(500).json({ success: false, message: "Failed to fetch client messages" });
+  }
+};
+
+
+
+
+
+//testing transfer
+
+/// Initiate Razorpay Payout (Actual Money Transfer)
+export const initiateRazorpayPayout = async (req, res) => {
+  console.log('💰 INITIATING RAZORPAY PAYOUT');
+  
+  try {
+    const { bookingId } = req.params;
+    const { paymentId, bankAccountId, notes } = req.body;
+    
+    console.log('🔄 Initiating Razorpay payout:', {
+      bookingId,
+      paymentId,
+      bankAccountId,
+      adminId: req.user?.id
+    });
+
+    // Validate input
+    if (!bookingId || !paymentId || !bankAccountId) {
+      console.log('❌ Missing required fields');
+      return res.status(400).json({
+        success: false,
+        message: 'Booking ID, Payment ID and Bank Account ID are required'
+      });
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(bookingId) || 
+        !mongoose.Types.ObjectId.isValid(paymentId) || 
+        !mongoose.Types.ObjectId.isValid(bankAccountId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ID format'
+      });
+    }
+
+    // Start session for transaction
+    const session = await mongoose.startSession();
+    await session.startTransaction();
+
+    try {
+      // Find the booking
+      const booking = await Booking.findById(bookingId).session(session);
+      if (!booking) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Booking not found:', bookingId);
+        return res.status(404).json({
+          success: false,
+          message: 'Booking not found'
+        });
+      }
+
+      console.log('✅ Booking found:', {
+        id: booking._id,
+        clientId: booking.clientId,
+        status: booking.bookingStatus
+      });
+
+      // Find the specific payment
+      const payment = booking.payments?.find(p => 
+        p._id?.toString() === paymentId.toString()
+      );
+
+      if (!payment) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Payment not found in booking:', paymentId);
+        return res.status(404).json({
+          success: false,
+          message: 'Payment not found in booking'
+        });
+      }
+
+      console.log('✅ Payment found:', {
+        id: payment._id,
+        amount: payment.amount,
+        status: payment.status,
+        transferStatus: payment.transferStatus
+      });
+
+      // Validate payment is eligible for transfer
+      if (payment.status !== 'completed') {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Payment not completed:', payment.status);
+        return res.status(400).json({
+          success: false,
+          message: 'Payment is not completed. Cannot initiate transfer.'
+        });
+      }
+
+      if (payment.transferStatus === 'completed') {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Transfer already completed for this payment');
+        return res.status(400).json({
+          success: false,
+          message: 'Transfer already completed for this payment'
+        });
+      }
+
+      // Find the bank account
+      const bankAccount = await BankAccount.findById(bankAccountId).session(session);
+      if (!bankAccount) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Bank account not found:', bankAccountId);
+        return res.status(404).json({
+          success: false,
+          message: 'Bank account not found'
+        });
+      }
+
+      console.log('✅ Bank account found:', {
+        holder: bankAccount.accountHolderName,
+        account: bankAccount.accountNumber,
+        bank: bankAccount.bankName,
+        ifsc: bankAccount.ifscCode || bankAccount.ifsc,
+        isVerified: bankAccount.isVerified
+      });
+
+      // Verify bank account is validated
+      if (!bankAccount.isVerified) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('⚠️ Bank account not verified');
+        return res.status(400).json({
+          success: false,
+          message: 'Bank account must be verified before initiating transfer'
+        });
+      }
+
+      // Calculate transfer amounts
+      const paymentAmount = payment.amount || 0;
+      console.log('💰 Payment amount:', paymentAmount);
+      
+      const transferAmounts = calculateTransferAmountsForPayment(paymentAmount);
+      console.log('💰 Transfer amounts calculated:', transferAmounts);
+
+      if (transferAmounts.clientAmount <= 0) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Invalid transfer amount:', transferAmounts.clientAmount);
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid transfer amount'
+        });
+      }
+
+      // Convert amount to paise (Razorpay works in paise)
+      const amountInPaise = Math.round(transferAmounts.clientAmount * 100);
+      
+      // Check minimum amount for Razorpay payout (100 paise = 1 INR)
+      if (amountInPaise < 100) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Amount too low for Razorpay payout:', amountInPaise);
+        return res.status(400).json({
+          success: false,
+          message: 'Transfer amount must be at least ₹1'
+        });
+      }
+
+      console.log('💰 Amount in paise for Razorpay:', amountInPaise);
+
+      // Check if Razorpay is initialized
+      if (!razorpay) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.log('❌ Razorpay not initialized');
+        return res.status(500).json({
+          success: false,
+          message: 'Payment gateway not initialized'
+        });
+      }
+
+      // Check if we're in live mode
+      const liveMode = isLiveMode();
+      console.log(`🌍 Mode: ${liveMode ? 'LIVE' : 'TEST'}`);
+
+      // In test mode, simulate the payout
+      if (!liveMode) {
+        console.log('⚠️ Test mode - Simulating payout');
+        await session.abortTransaction();
+        await session.endSession();
+        return simulateTestPayout(req, res, {
+          bookingId,
+          paymentId,
+          booking,
+          payment,
+          bankAccount,
+          transferAmounts,
+          amountInPaise,
+          notes
+        });
+      }
+
+      // LIVE MODE: Actual Razorpay Payout
+      console.log('🚀 LIVE MODE: Initiating actual payout');
+      
+      let contactId, fundAccountId, razorpayPayout;
+      
+      try {
+        // Step 1: Create contact in Razorpay
+        const contactData = {
+          name: bankAccount.accountHolderName,
+          email: `owner_${booking.clientId}@example.com`,
+          contact: '9999999999',
+          type: 'customer',
+          notes: {
+            clientId: booking.clientId,
+            bookingId: booking._id.toString()
+          }
+        };
+
+        const contact = await razorpay.contacts.create(contactData);
+        contactId = contact.id;
+        console.log('✅ Razorpay contact created:', contactId);
+
+        // Step 2: Create fund account in Razorpay
+        const fundAccountData = {
+          contact_id: contactId,
+          account_type: 'bank_account',
+          bank_account: {
+            name: bankAccount.accountHolderName,
+            ifsc: bankAccount.ifscCode || bankAccount.ifsc,
+            account_number: bankAccount.accountNumber
+          }
+        };
+
+        const fundAccount = await razorpay.fundAccounts.create(fundAccountData);
+        fundAccountId = fundAccount.id;
+        console.log('✅ Razorpay fund account created:', fundAccountId);
+
+        // Step 3: Check balance before payout
+        const balance = await razorpay.balance.current();
+        const availableBalance = balance.available?.find(b => b.currency === 'INR');
+        
+        if (!availableBalance || availableBalance.amount < amountInPaise) {
+          await session.abortTransaction();
+          await session.endSession();
+          return res.status(400).json({
+            success: false,
+            message: 'Insufficient balance in Razorpay account',
+            availableBalance: availableBalance ? availableBalance.amount / 100 : 0,
+            requiredBalance: transferAmounts.clientAmount
+          });
+        }
+
+        // Step 4: Create payout
+        const payoutData = {
+          account_number: bankAccount.accountNumber,
+          fund_account_id: fundAccountId,
+          amount: amountInPaise,
+          currency: 'INR',
+          mode: amountInPaise >= 200000 ? 'NEFT' : 'IMPS',
+          purpose: 'payout',
+          queue_if_low_balance: true,
+          reference_id: `payout_${Date.now()}_${booking._id.toString().substring(0, 8)}`,
+          narration: `Payment transfer for booking ${booking._id}`
+        };
+
+        console.log('📤 Creating Razorpay payout:', {
+          amount: payoutData.amount,
+          account: payoutData.account_number.substring(0, 4) + '****',
+          mode: payoutData.mode
+        });
+
+        razorpayPayout = await razorpay.payouts.create(payoutData);
+        console.log('✅ Razorpay payout created:', {
+          id: razorpayPayout.id,
+          status: razorpayPayout.status,
+          amount: razorpayPayout.amount
+        });
+
+      } catch (razorpayError) {
+        await session.abortTransaction();
+        await session.endSession();
+        console.error('❌ Razorpay API error:', {
+          statusCode: razorpayError.statusCode,
+          error: razorpayError.error,
+          description: razorpayError.error?.description,
+          code: razorpayError.error?.code
+        });
+        
+        return res.status(400).json({
+          success: false,
+          message: `Razorpay error: ${razorpayError.error?.description || 'Unknown error'}`,
+          code: razorpayError.error?.code,
+          details: razorpayError.error
+        });
+      }
+
+      // Step 5: Create transfer record in database
+      const transferRecord = new Transfer({
+        bookingId: booking._id,
+        paymentId: payment._id,
+        clientId: booking.clientId,
+        propertyId: booking.propertyId?._id || booking.propertyId,
+        bankAccountId: bankAccount._id,
+        amount: transferAmounts.clientAmount,
+        currency: 'INR',
+        status: razorpayPayout.status === 'processed' ? 'completed' : 'processing',
+        initiatedBy: req.user?.id,
+        notes: notes || `Razorpay payout for payment ${payment._id}`,
+        razorpayPayoutId: razorpayPayout.id,
+        razorpayContactId: contactId,
+        razorpayFundAccountId: fundAccountId,
+        transferDetails: {
+          accountHolderName: bankAccount.accountHolderName,
+          accountNumber: bankAccount.accountNumber,
+          bankName: bankAccount.bankName,
+          ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+          paymentAmount: paymentAmount,
+          platformCommission: transferAmounts.platformCommission,
+          gstOnCommission: transferAmounts.gstOnCommission,
+          totalPlatformEarnings: transferAmounts.totalPlatformEarnings,
+          razorpayData: {
+            payoutId: razorpayPayout.id,
+            status: razorpayPayout.status,
+            utr: razorpayPayout.utr,
+            fees: razorpayPayout.fees,
+            tax: razorpayPayout.tax,
+            mode: razorpayPayout.mode,
+            reference_id: razorpayPayout.reference_id
+          }
+        },
+        razorpayTransfer: true,
+        liveMode: true
+      });
+
+      await transferRecord.save({ session });
+
+      // Step 6: Update payment transfer status
+      const result = await Booking.findOneAndUpdate(
+        { 
+          _id: bookingId,
+          'payments._id': paymentId 
+        },
+        {
+          $set: {
+            'payments.$.transferStatus': razorpayPayout.status === 'processed' ? 'completed' : 'processing',
+            'payments.$.transferDetails': {
+              clientAmount: transferAmounts.clientAmount,
+              platformCommission: transferAmounts.platformCommission,
+              gstOnCommission: transferAmounts.gstOnCommission,
+              totalPlatformEarnings: transferAmounts.totalPlatformEarnings,
+              bankAccountUsed: {
+                accountNumber: bankAccount.accountNumber,
+                bankName: bankAccount.bankName,
+                ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+                accountHolderName: bankAccount.accountHolderName
+              },
+              transferNotes: notes || 'Razorpay payout initiated',
+              processedBy: req.user?.id,
+              processedAt: new Date(),
+              razorpayPayoutId: razorpayPayout.id,
+              razorpayStatus: razorpayPayout.status,
+              razorpayUTR: razorpayPayout.utr,
+              breakdown: transferAmounts.breakdown
+            }
+          }
+        },
+        { session, new: true }
+      );
+
+      if (!result) {
+        throw new Error('Failed to update payment transfer status');
+      }
+
+      console.log('✅ Payment updated successfully');
+
+      // Step 7: Update overall transfer status
+      await updateOverallTransferStatus(bookingId);
+
+      // Commit transaction
+      await session.commitTransaction();
+      await session.endSession();
+
+      // Step 8: Send notification
+      try {
+        await NotificationService.createTransferNotification(
+          booking.clientId,
+          'transfer_initiated',
+          transferAmounts.clientAmount,
+          bookingId,
+          {
+            payoutId: razorpayPayout.id,
+            status: razorpayPayout.status,
+            bankAccount: bankAccount.accountNumber.substring(bankAccount.accountNumber.length - 4)
+          }
+        );
+        console.log('✅ Transfer notification created');
+      } catch (notificationError) {
+        console.error('❌ Notification error:', notificationError);
+      }
+
+      // Step 9: Prepare response
+      const response = {
+        success: true,
+        message: razorpayPayout.status === 'processed' 
+          ? 'Payment transferred successfully via Razorpay!' 
+          : 'Razorpay payout initiated successfully',
+        transferDetails: {
+          id: transferRecord._id,
+          bookingId: transferRecord.bookingId,
+          paymentId: transferRecord.paymentId,
+          amount: transferRecord.amount,
+          status: transferRecord.status,
+          razorpayPayoutId: razorpayPayout.id,
+          razorpayStatus: razorpayPayout.status,
+          razorpayUTR: razorpayPayout.utr,
+          bankAccount: {
+            holder: bankAccount.accountHolderName,
+            account: bankAccount.accountNumber.substring(0, 4) + '****' + 
+                   bankAccount.accountNumber.substring(bankAccount.accountNumber.length - 4),
+            bank: bankAccount.bankName,
+            ifsc: bankAccount.ifscCode || bankAccount.ifsc
+          },
+          initiatedAt: transferRecord.createdAt,
+          notes: transferRecord.notes,
+          paymentDetails: {
+            amount: paymentAmount,
+            type: payment.type || 'booking',
+            date: payment.date
+          },
+          calculatedAmounts: transferAmounts.breakdown,
+          fees: razorpayPayout.fees ? razorpayPayout.fees / 100 : 0,
+          tax: razorpayPayout.tax ? razorpayPayout.tax / 100 : 0,
+          mode: razorpayPayout.mode
+        }
+      };
+
+      console.log('✅ Razorpay payout initiated successfully');
+      return res.status(200).json(response);
+
+    } catch (error) {
+      await session.abortTransaction();
+      await session.endSession();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('❌ Razorpay payout error:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ID format',
+        error: error.message
+      });
+    }
+
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Data validation failed',
+        error: error.message
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to initiate Razorpay payout',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
+// Manual transfer endpoint
+export const initiateManualTransfer = async (req, res) => {
+  console.log('🔄 INITIATING MANUAL TRANSFER');
+  
+  try {
+    const { bookingId } = req.params;
+    const { bankAccountId, notes, paymentId } = req.body;
+    
+    console.log('🔄 Initiating manual transfer for booking:', bookingId);
+
+    // Validate input
+    if (!bookingId || !bankAccountId) {
+      console.log('❌ Missing required fields');
+      return res.status(400).json({
+        success: false,
+        message: 'Booking ID and Bank Account ID are required'
+      });
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking ID format'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(bankAccountId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid bank account ID format'
+      });
+    }
+
+    // Start session
+    const session = await mongoose.startSession();
+    await session.startTransaction();
+
+    try {
+      // Find the booking
+      const booking = await Booking.findById(bookingId).session(session);
+      if (!booking) {
+        await session.abortTransaction();
+        await session.endSession();
+        return res.status(404).json({
+          success: false,
+          message: 'Booking not found'
+        });
+      }
+
+      // Find specific payment if provided
+      let payment = null;
+      if (paymentId && booking.payments) {
+        payment = booking.payments.find(p => 
+          p._id?.toString() === paymentId.toString()
+        );
+      }
+
+      // Find the bank account
+      const bankAccount = await BankAccount.findById(bankAccountId).session(session);
+      if (!bankAccount) {
+        await session.abortTransaction();
+        await session.endSession();
+        return res.status(404).json({
+          success: false,
+          message: 'Bank account not found'
+        });
+      }
+
+      // Calculate transfer amount
+      let transferAmount = 0;
+      let paymentAmount = 0;
+      
+      if (payment) {
+        paymentAmount = payment.amount || 0;
+        const amounts = calculateTransferAmountsForPayment(paymentAmount);
+        transferAmount = amounts.clientAmount;
+      } else {
+        paymentAmount = booking.pricing?.totalAmount || 0;
+        // For manual transfer, we calculate 95% goes to client
+        transferAmount = paymentAmount * 0.95;
+      }
+
+      if (transferAmount <= 0) {
+        await session.abortTransaction();
+        await session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid transfer amount'
+        });
+      }
+
+      // Create manual transfer record
+      const transferRecord = new Transfer({
+        bookingId: booking._id,
+        paymentId: payment?._id || null,
+        clientId: booking.clientId,
+        propertyId: booking.propertyId?._id || booking.propertyId,
+        bankAccountId: bankAccount._id,
+        amount: transferAmount,
+        currency: 'INR',
+        status: 'manual_pending',
+        initiatedBy: req.user?.id,
+        notes: notes || `Manual transfer for booking ${booking._id}`,
+        transferDetails: {
+          accountHolderName: bankAccount.accountHolderName,
+          accountNumber: bankAccount.accountNumber,
+          bankName: bankAccount.bankName,
+          ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+          paymentAmount: paymentAmount,
+          platformCommission: paymentAmount * 0.05,
+          gstOnCommission: (paymentAmount * 0.05) * 0.18,
+          totalPlatformEarnings: (paymentAmount * 0.05) + ((paymentAmount * 0.05) * 0.18)
+        },
+        manualTransfer: true,
+        method: 'manual'
+      });
+
+      await transferRecord.save({ session });
+
+      // Update booking payment transfer status
+      if (payment) {
+        await Booking.findOneAndUpdate(
+          { 
+            _id: bookingId,
+            'payments._id': paymentId 
+          },
+          {
+            $set: {
+              'payments.$.transferStatus': 'manual_pending',
+              'payments.$.transferDetails': {
+                clientAmount: transferAmount,
+                platformCommission: paymentAmount * 0.05,
+                gstOnCommission: (paymentAmount * 0.05) * 0.18,
+                bankAccountUsed: {
+                  accountNumber: bankAccount.accountNumber,
+                  bankName: bankAccount.bankName,
+                  ifscCode: bankAccount.ifscCode || bankAccount.ifsc,
+                  accountHolderName: bankAccount.accountHolderName
+                },
+                transferNotes: notes || 'Manual transfer initiated',
+                processedBy: req.user?.id,
+                processedAt: new Date(),
+                breakdown: {
+                  totalPayment: paymentAmount,
+                  platformCommissionRate: '5%',
+                  gstRate: '18%',
+                  platformCommission: paymentAmount * 0.05,
+                  gstOnCommission: (paymentAmount * 0.05) * 0.18,
+                  clientAmount: transferAmount
+                }
+              }
+            }
+          },
+          { session }
+        );
+      } else {
+        // Update overall booking transfer status
+        await Booking.findByIdAndUpdate(bookingId, {
+          transferStatus: 'manual_pending',
+          'transferDetails.clientTransferStatus': 'manual_pending',
+          'transferDetails.transferNotes': notes || 'Manual transfer initiated',
+          'transferDetails.processedBy': req.user?.id,
+          'transferDetails.processedAt': new Date()
+        }, { session });
+      }
+
+      // Update overall transfer status
+      await updateOverallTransferStatus(bookingId);
+
+      // Commit transaction
+      await session.commitTransaction();
+      await session.endSession();
+
+      // Send notification to property owner
+      try {
+        await NotificationService.createTransferNotification(
+          booking.clientId,
+          'transfer_initiated',
+          transferAmount,
+          bookingId,
+          {
+            method: 'manual',
+            bankAccount: bankAccount.accountNumber.substring(bankAccount.accountNumber.length - 4)
+          }
+        );
+      } catch (notificationError) {
+        console.error('❌ Notification error:', notificationError);
+      }
+
+      const responseData = {
+        success: true,
+        message: 'Manual transfer recorded successfully',
+        transferDetails: {
+          id: transferRecord._id,
+          bookingId: transferRecord.bookingId,
+          paymentId: transferRecord.paymentId,
+          amount: transferRecord.amount,
+          status: transferRecord.status,
+          bankAccount: {
+            holder: bankAccount.accountHolderName,
+            account: bankAccount.accountNumber.substring(0, 4) + '****' + 
+                   bankAccount.accountNumber.substring(bankAccount.accountNumber.length - 4),
+            bank: bankAccount.bankName,
+            ifsc: bankAccount.ifscCode || bankAccount.ifsc
+          },
+          initiatedAt: transferRecord.createdAt,
+          notes: transferRecord.notes,
+          calculatedAmounts: {
+            totalPayment: paymentAmount,
+            platformCommission: paymentAmount * 0.05,
+            gstOnCommission: (paymentAmount * 0.05) * 0.18,
+            clientAmount: transferAmount
+          }
+        }
+      };
+
+      return res.status(200).json(responseData);
+
+    } catch (error) {
+      await session.abortTransaction();
+      await session.endSession();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('❌ Manual transfer error:', error.message);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ID format',
+        error: error.message
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to record manual transfer',
+      error: error.message
+    });
+  }
+};
+
+// Check payout status
+export const checkPayoutStatus = async (req, res) => {
+  try {
+    const { payoutId } = req.params;
+    
+    if (!payoutId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payout ID is required'
+      });
+    }
+
+    console.log('🔍 Checking Razorpay payout status:', payoutId);
+    
+    if (!razorpay) {
+      return res.status(500).json({
+        success: false,
+        message: 'Payment gateway not initialized'
+      });
+    }
+    
+    const payout = await razorpay.payouts.fetch(payoutId);
+    
+    res.status(200).json({
+      success: true,
+      payout: {
+        id: payout.id,
+        amount: payout.amount / 100,
+        status: payout.status,
+        utr: payout.utr,
+        fees: payout.fees ? payout.fees / 100 : 0,
+        tax: payout.tax ? payout.tax / 100 : 0,
+        mode: payout.mode,
+        purpose: payout.purpose,
+        created_at: payout.created_at,
+        processed_at: payout.processed_at,
+        reference_id: payout.reference_id
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Check payout status error:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check payout status',
+      error: error.message
+    });
+  }
+};
+
+// Get Razorpay account balance
+export const getRazorpayBalance = async (req, res) => {
+  try {
+    console.log('💰 Checking Razorpay account balance...');
+    
+    if (!razorpay) {
+      return res.status(500).json({
+        success: false,
+        message: 'Razorpay not initialized'
+      });
+    }
+    
+    const balance = await razorpay.balance.current();
+    
+    res.status(200).json({
+      success: true,
+      balance: {
+        available: balance.available ? balance.available.map(b => ({
+          currency: b.currency,
+          amount: b.amount / 100
+        })) : [],
+        onHold: balance.on_hold ? balance.on_hold.map(b => ({
+          currency: b.currency,
+          amount: b.amount / 100
+        })) : []
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get Razorpay balance error:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch Razorpay balance',
+      error: error.message
+    });
+  }
+};
+
+// Get transfer details for a booking
+export const getTransferDetails = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId)
+      .populate('propertyId', 'name ownerId')
+      .populate('userId', 'name email')
+      .populate('transferDetails.processedBy', 'name email');
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const transferDetails = {
+      bookingId: booking._id,
+      propertyId: booking.propertyId?._id,
+      propertyName: booking.propertyId?.name,
+      clientId: booking.propertyId?.ownerId || booking.clientId,
+      customerName: booking.customerDetails?.primary?.name,
+      amount: booking.transferDetails?.clientAmount || 0,
+      platformCommission: booking.transferDetails?.platformCommission || 0,
+      totalPlatformEarnings: booking.transferDetails?.totalPlatformEarnings || 0,
+      transferStatus: booking.transferStatus,
+      paymentStatus: booking.paymentInfo?.paymentStatus,
+      bankAccountUsed: booking.transferDetails?.bankAccountUsed,
+      transferNotes: booking.transferDetails?.transferNotes,
+      processedBy: booking.transferDetails?.processedBy,
+      processedAt: booking.transferDetails?.processedAt,
+      transferCompletedAt: booking.transferDetails?.transferCompletedAt,
+      createdAt: booking.createdAt
+    };
+
+    res.status(200).json({
+      success: true,
+      transferDetails
+    });
+
+  } catch (error) {
+    console.error('Get transfer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch transfer details'
+    });
+  }
+};
+
+// Check transfer status
+export const checkTransferStatus = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Calculate payment-wise transfer status
+    const paymentTransfers = booking.payments?.map(payment => ({
+      paymentId: payment._id,
+      amount: payment.amount,
+      date: payment.date,
+      status: payment.status,
+      transferStatus: payment.transferStatus,
+      transferDetails: payment.transferDetails
+    })) || [];
+
+    res.status(200).json({
+      success: true,
+      transferStatus: booking.transferStatus,
+      transferDetails: booking.transferDetails,
+      paymentTransfers: paymentTransfers
+    });
+
+  } catch (error) {
+    console.error('Check transfer status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check transfer status'
+    });
+  }
+};
+
+// Razorpay webhook handler
+export const razorpayWebhook = async (req, res) => {
+  try {
+    const webhookSignature = req.headers['x-razorpay-signature'];
+    const webhookBody = JSON.stringify(req.body);
+
+    // Verify webhook signature
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+      .update(webhookBody)
+      .digest('hex');
+
+    if (expectedSignature !== webhookSignature) {
+      console.error('❌ Invalid webhook signature');
+      return res.status(400).json({ success: false, message: 'Invalid signature' });
+    }
+
+    const event = req.body.event;
+    const payout = req.body.payload.payout.entity;
+
+    console.log('📨 Razorpay Webhook Received:', {
+      event,
+      payoutId: payout.id,
+      status: payout.status
+    });
+
+    // Find transfer by Razorpay payout ID
+    const transfer = await Transfer.findOne({ razorpayPayoutId: payout.id });
+    
+    if (!transfer) {
+      console.log('⚠️ Transfer not found for payout:', payout.id);
+      return res.status(200).json({ success: true, message: 'Transfer not found' });
+    }
+
+    // Update transfer status based on event
+    let newStatus = transfer.status;
+    let notificationType = 'transfer_updated';
+    
+    switch (event) {
+      case 'payout.processed':
+        newStatus = 'completed';
+        notificationType = 'transfer_completed';
+        break;
+      case 'payout.failed':
+        newStatus = 'failed';
+        notificationType = 'transfer_failed';
+        break;
+      case 'payout.reversed':
+        newStatus = 'reversed';
+        notificationType = 'transfer_reversed';
+        break;
+      default:
+        console.log('ℹ️ Unhandled webhook event:', event);
+    }
+
+    // Update transfer status
+    transfer.status = newStatus;
+    transfer.transferDetails.razorpayData.status = payout.status;
+    transfer.transferDetails.razorpayData.utr = payout.utr;
+    transfer.updatedAt = new Date();
+    
+    await transfer.save();
+
+    // Update payment transfer status in booking
+    if (transfer.paymentId) {
+      await Booking.findOneAndUpdate(
+        { 
+          _id: transfer.bookingId,
+          'payments._id': transfer.paymentId 
+        },
+        {
+          $set: {
+            'payments.$.transferStatus': newStatus,
+            'payments.$.transferDetails.razorpayStatus': payout.status,
+            'payments.$.transferDetails.razorpayUTR': payout.utr,
+            'payments.$.transferDetails.processedAt': new Date()
+          }
+        }
+      );
+    }
+
+    // Update overall transfer status
+    await updateOverallTransferStatus(transfer.bookingId);
+
+    // Send notification
+    try {
+      await NotificationService.createTransferNotification(
+        transfer.clientId,
+        notificationType,
+        transfer.amount,
+        transfer.bookingId,
+        {
+          payoutId: payout.id,
+          status: payout.status,
+          utr: payout.utr
+        }
+      );
+    } catch (notificationError) {
+      console.error('❌ Webhook notification error:', notificationError);
+    }
+
+    console.log('✅ Webhook processed successfully');
+    res.status(200).json({ success: true });
+
+  } catch (error) {
+    console.error('❌ Webhook error:', error);
+    res.status(500).json({ success: false, message: 'Webhook processing failed' });
+  }
+};
+
+// Health check endpoint
+export const healthCheck = async (req, res) => {
+  try {
+    const health = {
+      success: true,
+      message: 'Payment service is running',
+      timestamp: new Date().toISOString(),
+      services: {
+        razorpay: razorpay ? 'initialized' : 'not_initialized',
+        database: 'connected',
+        environment: process.env.NODE_ENV || 'development',
+        mode: isLiveMode() ? 'LIVE' : 'TEST'
+      },
+      configuration: {
+        key_id: process.env.RAZORPAY_KEY_ID ? 'configured' : 'missing',
+        key_secret: process.env.RAZORPAY_KEY_SECRET ? 'configured' : 'missing',
+        webhook_secret: process.env.RAZORPAY_WEBHOOK_SECRET ? 'configured' : 'missing'
+      }
+    };
+    
+    res.status(200).json(health);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Health check failed',
+      error: error.message
+    });
   }
 };

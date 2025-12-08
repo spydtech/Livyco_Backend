@@ -67,6 +67,7 @@ import {
   // processVacateRequest, 
   // completeRefund, 
   // getVacateStatus 
+  rejectVacateRequest,
    requestVacate,
   getVacateRequests,
   getVacateRequestById,
@@ -136,6 +137,7 @@ router.post('/vacate/:requestId/complete-refund', verifyToken, completeRefund);
 router.get('/vacate/:bookingId/status', verifyToken, getVacateStatus);
 router.get('/vacate/user/requests', verifyToken, getUserVacateRequests);
 router.post('/vacate/:requestId/add-deduction', verifyToken, addDeduction);
+router.put('/vacate/:requestId/reject', verifyToken, rejectVacateRequest); 
 
 
 

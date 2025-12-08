@@ -508,6 +508,7 @@ import Booking from '../models/Booking.js';
 import User from '../models/User.js';
 import Property from '../models/Property.js';
 import mongoose from 'mongoose';
+import { NotificationService } from '../controllers/notificationController.js';
 
 // Request to vacate room
 export const requestVacate = async (req, res) => {
@@ -593,6 +594,72 @@ export const requestVacate = async (req, res) => {
     // Update booking with vacate request reference
     booking.vacateRequestId = vacateRequest._id;
     await booking.save();
+
+    // ✅ ADD NOTIFICATIONS - ONLY THIS PART IS NEW
+    try {
+      // Get property details for notification
+      const property = await Property.findById(booking.propertyId);
+      
+      // User notification
+      await NotificationService.createNotification({
+        userId: booking.userId,
+        type: 'vacate_requested',
+        title: 'Vacate Request Submitted',
+        message: `Your vacate request for ${property?.name || 'the property'} has been submitted successfully.`,
+        priority: 'medium',
+        metadata: {
+          bookingId: booking._id,
+          propertyId: booking.propertyId,
+          propertyName: property?.name,
+          vacateRequestId: vacateRequest._id,
+          requestedDate: vacateRequest.requestedDate,
+          action: 'submitted'
+        }
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: booking.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: booking.clientId,
+          type: 'vacate_requested',
+          title: 'New Vacate Request',
+          message: `New vacate request received for ${property?.name || 'your property'}.`,
+          priority: 'high',
+          metadata: {
+            bookingId: booking._id,
+            propertyId: booking.propertyId,
+            propertyName: property?.name,
+            vacateRequestId: vacateRequest._id,
+            requestedDate: vacateRequest.requestedDate,
+            action: 'submitted'
+          }
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'vacate_requested',
+        title: 'New Vacate Request',
+        message: `New vacate request submitted for ${property?.name || 'a property'}.`,
+        priority: 'medium',
+        metadata: {
+          bookingId: booking._id,
+          propertyId: booking.propertyId,
+          propertyName: property?.name,
+          vacateRequestId: vacateRequest._id,
+          clientId: booking.clientId,
+          action: 'submitted'
+        }
+      });
+
+      console.log('✅ Notifications created for vacate request');
+    } catch (notificationError) {
+      console.error('❌ Error creating notifications:', notificationError);
+      // Don't fail the main request if notifications fail
+    }
     
     console.log('Vacate request successful for booking:', bookingId);
     
@@ -873,6 +940,65 @@ export const approveVacateRequest = async (req, res) => {
     }
     
     await vacateRequest.save();
+
+    // ✅ ADD NOTIFICATIONS FOR APPROVAL
+    try {
+      // User notification
+      await NotificationService.createNotification({
+        userId: vacateRequest.userId,
+        type: 'vacate_approved',
+        title: 'Vacate Request Approved! 🎉',
+        message: `Your vacate request has been approved. Refund amount: ₹${vacateRequest.refundAmount}`,
+        priority: 'high',
+        metadata: {
+          bookingId: vacateRequest.bookingId,
+          propertyId: vacateRequest.propertyId,
+          vacateRequestId: vacateRequest._id,
+          refundAmount: vacateRequest.refundAmount,
+          approvedAt: vacateRequest.approvedAt,
+          action: 'approved'
+        }
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          type: 'vacate_approved',
+          title: 'Vacate Request Approved',
+          message: `Vacate request approved for ${property.name}.`,
+          priority: 'medium',
+          metadata: {
+            bookingId: vacateRequest.bookingId,
+            propertyId: vacateRequest.propertyId,
+            vacateRequestId: vacateRequest._id,
+            action: 'approved'
+          }
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'vacate_approved',
+        title: 'Vacate Request Approved',
+        message: `Vacate request approved for ${property.name}.`,
+        priority: 'medium',
+        metadata: {
+          bookingId: vacateRequest.bookingId,
+          propertyId: vacateRequest.propertyId,
+          vacateRequestId: vacateRequest._id,
+          clientId: property.clientId,
+          action: 'approved'
+        }
+      });
+
+      console.log('✅ Notifications created for vacate approval');
+    } catch (notificationError) {
+      console.error('❌ Error creating approval notifications:', notificationError);
+    }
     
     res.status(200).json({
       success: true,
@@ -1180,3 +1306,77 @@ export const addDeduction = async (req, res) => {
     });
   }
 };
+
+
+// Reject vacate request
+export const rejectVacateRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { notes } = req.body;
+   
+    console.log('Rejecting vacate request:', { requestId, notes });
+   
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+   
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request ID format'
+      });
+    }
+   
+    const vacateRequest = await VacateRequest.findById(requestId)
+      .populate('propertyId');
+   
+    if (!vacateRequest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vacate request not found'
+      });
+    }
+   
+    // Check if user has permission (client owns the property)
+    const property = await Property.findById(vacateRequest.propertyId);
+    const clientId = req.user.clientId || req.user.id;
+   
+    if (!property || property.clientId.toString() !== clientId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to process this request'
+      });
+    }
+   
+    if (vacateRequest.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'No pending vacate request found'
+      });
+    }
+   
+    // Update vacate request status to rejected
+    vacateRequest.status = 'rejected';
+    vacateRequest.rejectedBy = req.user.id;
+    vacateRequest.rejectedAt = new Date();
+    vacateRequest.rejectionNotes = notes || '';
+   
+    await vacateRequest.save();
+   
+    res.status(200).json({
+      success: true,
+      message: 'Vacate request rejected successfully'
+    });
+   
+  } catch (error) {
+    console.error('Reject vacate request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+ 

@@ -1651,6 +1651,7 @@ import Concern from '../models/Concern.js';
 import Booking from '../models/Booking.js';
 import Property from '../models/Property.js';
 import User from '../models/User.js';
+import { NotificationService } from '../controllers/notificationController.js';
 
 // Helper function to normalize bed names
 const normalizeBedName = (bedName) => {
@@ -1866,6 +1867,71 @@ export const submitConcern = async (req, res) => {
     const newConcern = new Concern(concernData);
     await newConcern.save({ session });
 
+    // ✅ ADD CONCERN SUBMISSION NOTIFICATIONS
+    try {
+      // Get property details for notification
+      const property = await Property.findById(latestBooking.propertyId._id);
+      
+      // User notification
+      await NotificationService.createNotification({
+        userId: req.user.id,
+        type: 'concern_submitted',
+        title: 'Concern Submitted Successfully',
+        message: `Your ${type.replace('-', ' ')} concern has been submitted and is under review.`,
+        priority: 'medium',
+        metadata: {
+          concernId: newConcern._id,
+          propertyId: latestBooking.propertyId._id,
+          propertyName: property?.name,
+          concernType: type,
+          action: 'submitted'
+        }
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          type: 'concern_submitted',
+          title: 'New Concern Submitted',
+          message: `New ${type.replace('-', ' ')} concern submitted for ${property?.name}.`,
+          priority: 'high',
+          metadata: {
+            concernId: newConcern._id,
+            propertyId: latestBooking.propertyId._id,
+            propertyName: property?.name,
+            concernType: type,
+            clientId: property.clientId,
+            action: 'submitted'
+          }
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'concern_submitted',
+        title: 'New Concern Submitted',
+        message: `New ${type.replace('-', ' ')} concern submitted for ${property?.name}.`,
+        priority: 'medium',
+        metadata: {
+          concernId: newConcern._id,
+          propertyId: latestBooking.propertyId._id,
+          propertyName: property?.name,
+          concernType: type,
+          clientId: property.clientId,
+          action: 'submitted'
+        }
+      });
+
+      console.log('✅ Notifications created for concern submission');
+    } catch (notificationError) {
+      console.error('❌ Error creating concern submission notifications:', notificationError);
+      // Don't fail the main request if notifications fail
+    }
+
     await session.commitTransaction();
     session.endSession();
 
@@ -2077,7 +2143,6 @@ export const cancelConcern = async (req, res) => {
 };
 
 // Client: Approve concern - FIXED VERSION
-// Client: Approve concern - FIXED VERSION
 export const approveConcern = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -2182,6 +2247,67 @@ export const approveConcern = async (req, res) => {
 
     await concern.save({ session });
 
+    // ✅ ADD CONCERN APPROVAL NOTIFICATIONS
+    try {
+      // User notification
+      await NotificationService.createNotification({
+        userId: concern.userId,
+        type: 'concern_approved',
+        title: 'Concern Approved! 🎉',
+        message: `Your ${concern.type.replace('-', ' ')} concern has been approved.`,
+        priority: 'high',
+        metadata: {
+          concernId: concern._id,
+          propertyId: concern.propertyId,
+          propertyName: property?.name,
+          concernType: concern.type,
+          approvedBy: req.user.id,
+          action: 'approved'
+        }
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          type: 'concern_approved',
+          title: 'Concern Approved',
+          message: `Concern approved for ${property?.name}.`,
+          priority: 'medium',
+          metadata: {
+            concernId: concern._id,
+            propertyId: concern.propertyId,
+            propertyName: property?.name,
+            concernType: concern.type,
+            action: 'approved'
+          }
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'concern_approved',
+        title: 'Concern Approved',
+        message: `Concern approved for ${property?.name}.`,
+        priority: 'medium',
+        metadata: {
+          concernId: concern._id,
+          propertyId: concern.propertyId,
+          propertyName: property?.name,
+          concernType: concern.type,
+          clientId: property.clientId,
+          action: 'approved'
+        }
+      });
+
+      console.log('✅ Notifications created for concern approval');
+    } catch (notificationError) {
+      console.error('❌ Error creating concern approval notifications:', notificationError);
+    }
+
     await session.commitTransaction();
     session.endSession();
 
@@ -2266,6 +2392,67 @@ export const rejectConcern = async (req, res) => {
     concern.updatedAt = new Date();
     await concern.save();
 
+    // ✅ ADD CONCERN REJECTION NOTIFICATIONS
+    try {
+      // User notification
+      await NotificationService.createNotification({
+        userId: concern.userId,
+        type: 'concern_rejected',
+        title: 'Concern Rejected',
+        message: `Your ${concern.type.replace('-', ' ')} concern was rejected. Reason: ${rejectionReason}`,
+        priority: 'high',
+        metadata: {
+          concernId: concern._id,
+          propertyId: concern.propertyId,
+          propertyName: property?.name,
+          concernType: concern.type,
+          rejectionReason: rejectionReason,
+          action: 'rejected'
+        }
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          type: 'concern_rejected',
+          title: 'Concern Rejected',
+          message: `Concern rejected for ${property?.name}.`,
+          priority: 'medium',
+          metadata: {
+            concernId: concern._id,
+            propertyId: concern.propertyId,
+            propertyName: property?.name,
+            concernType: concern.type,
+            action: 'rejected'
+          }
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'concern_rejected',
+        title: 'Concern Rejected',
+        message: `Concern rejected for ${property?.name}.`,
+        priority: 'medium',
+        metadata: {
+          concernId: concern._id,
+          propertyId: concern.propertyId,
+          propertyName: property?.name,
+          concernType: concern.type,
+          clientId: property.clientId,
+          action: 'rejected'
+        }
+      });
+
+      console.log('✅ Notifications created for concern rejection');
+    } catch (notificationError) {
+      console.error('❌ Error creating concern rejection notifications:', notificationError);
+    }
+
     const populatedConcern = await Concern.findById(concernId)
       .populate('userId', 'name email')
       .populate('rejectedBy', 'name');
@@ -2336,6 +2523,67 @@ export const completeConcern = async (req, res) => {
     }
 
     await concern.save();
+
+    // ✅ ADD CONCERN COMPLETION NOTIFICATIONS
+    try {
+      // User notification
+      await NotificationService.createNotification({
+        userId: concern.userId,
+        type: 'concern_completed',
+        title: 'Concern Completed! ✅',
+        message: `Your ${concern.type.replace('-', ' ')} concern has been completed successfully.`,
+        priority: 'high',
+        metadata: {
+          concernId: concern._id,
+          propertyId: concern.propertyId,
+          propertyName: property?.name,
+          concernType: concern.type,
+          completedBy: req.user.id,
+          action: 'completed'
+        }
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          type: 'concern_completed',
+          title: 'Concern Completed',
+          message: `Concern completed for ${property?.name}.`,
+          priority: 'medium',
+          metadata: {
+            concernId: concern._id,
+            propertyId: concern.propertyId,
+            propertyName: property?.name,
+            concernType: concern.type,
+            action: 'completed'
+          }
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'concern_completed',
+        title: 'Concern Completed',
+        message: `Concern completed for ${property?.name}.`,
+        priority: 'medium',
+        metadata: {
+          concernId: concern._id,
+          propertyId: concern.propertyId,
+          propertyName: property?.name,
+          concernType: concern.type,
+          clientId: property.clientId,
+          action: 'completed'
+        }
+      });
+
+      console.log('✅ Notifications created for concern completion');
+    } catch (notificationError) {
+      console.error('❌ Error creating concern completion notifications:', notificationError);
+    }
 
     const populatedConcern = await Concern.findById(concernId)
       .populate('userId', 'name email')
@@ -2417,14 +2665,21 @@ export const addInternalNote = async (req, res) => {
 };
 
 // Get concerns for property (client view) - CORRECTED VERSION
-// Get concerns for property (client view) - CORRECTED VERSION
+// In concernController.js - getPropertyConcerns function
 export const getPropertyConcerns = async (req, res) => {
   try {
     const { propertyId } = req.params;
     const { status, type } = req.query;
 
-    console.log('User from token:', req.user);
+    console.log('🔍 DEBUG - Get Property Concerns Called:');
+    console.log('User from token:', {
+      id: req.user.id,
+      clientId: req.user.clientId,
+      role: req.user.role,
+      email: req.user.email
+    });
     console.log('Requested property ID:', propertyId);
+    console.log('Request query:', { status, type });
 
     if (!mongoose.Types.ObjectId.isValid(propertyId)) {
       return res.status(400).json({
@@ -2436,46 +2691,51 @@ export const getPropertyConcerns = async (req, res) => {
     // Check if user has access to this property
     const property = await Property.findById(propertyId);
     if (!property) {
+      console.log('❌ Property not found in database');
       return res.status(404).json({
         success: false,
         message: 'Property not found'
       });
     }
 
-    console.log('Property found:', {
-      propertyId: property._id,
-      propertyClientId: property.clientId,
-      propertyName: property.name,
-      userClientId: req.user.clientId,
-      userRole: req.user.role,
-      userId: req.user.id
+    console.log('✅ Property found:', {
+      _id: property._id,
+      name: property.name,
+      clientId: property.clientId,
+      clientIdType: typeof property.clientId
     });
 
     // Check if user is a client
     if (req.user.role !== 'client') {
+      console.log('❌ User is not a client, role:', req.user.role);
       return res.status(403).json({
         success: false,
         message: 'Access denied. Only clients can view property concerns.'
       });
     }
 
-    // IMPORTANT FIX: Check if the client owns this property
-    // Convert both to string and compare case-insensitively to handle any formatting issues
-    const propertyClientIdStr = String(property.clientId || '').trim().toUpperCase();
-    const userClientIdStr = String(req.user.clientId || '').trim().toUpperCase();
+    // IMPORTANT: Fix client ID comparison
+    // Convert both to string and handle null/undefined
+    const propertyClientId = property.clientId ? property.clientId.toString().trim() : '';
+    const userClientId = req.user.clientId ? req.user.clientId.toString().trim() : '';
     
-    console.log('Client ID comparison:', {
-      propertyClientId: propertyClientIdStr,
-      userClientId: userClientIdStr,
-      match: propertyClientIdStr === userClientIdStr
+    console.log('🔍 Client ID Comparison:', {
+      propertyClientId: propertyClientId,
+      userClientId: userClientId,
+      match: propertyClientId === userClientId
     });
 
-    if (propertyClientIdStr !== userClientIdStr) {
+    if (propertyClientId !== userClientId) {
+      console.log('❌ Client ID mismatch!');
+      console.log('Property belongs to client:', propertyClientId);
+      console.log('User is client:', userClientId);
       return res.status(403).json({
         success: false,
         message: 'Access denied. You can only view concerns for your own properties.'
       });
     }
+
+    console.log('✅ Access granted, fetching concerns...');
 
     // Build filter
     const filter = { propertyId };
@@ -2490,14 +2750,24 @@ export const getPropertyConcerns = async (req, res) => {
       .populate('completedBy', 'name')
       .sort({ createdAt: -1 });
 
+    console.log(`✅ Found ${concerns.length} concerns for property ${propertyId}`);
+
     return res.status(200).json({
       success: true,
       concerns,
-      count: concerns.length
+      count: concerns.length,
+      property: {
+        _id: property._id,
+        name: property.name,
+        locality: property.locality,
+        city: property.city
+      }
     });
 
   } catch (error) {
-    console.error('Get property concerns error:', error);
+    console.error('❌ Get property concerns error:', error);
+    console.error('Error stack:', error.stack);
+    
     return res.status(500).json({
       success: false,
       message: 'Internal server error',

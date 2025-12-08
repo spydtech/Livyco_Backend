@@ -31,14 +31,16 @@ const foodItemSchema = new mongoose.Schema(
     bookingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
-      required: true,
+      required: false, 
     },
+    menuType: {
+      type: String,
+      enum: ["property", "booking"],
+      default: "property" // ✅ ADDED
+    }
   },
   { timestamps: true }
 );
 
-// Create model
 const FoodItem = mongoose.model("FoodItem", foodItemSchema);
-
-// Export as default (important for your controller import)
 export default FoodItem;

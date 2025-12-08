@@ -738,17 +738,17 @@ export const getUser = async (req, res) => {
   try {
     // User is attached to req by verifyToken middleware
     const user = req.user;
-    
+ 
     // Fetch the complete user document from database
     const fullUser = await User.findById(user.id);
-    
+ 
     if (!fullUser) {
       return res.status(404).json({
         success: false,
         message: "User not found"
       });
     }
-
+ 
     // Basic user response
     const userResponse = {
       id: fullUser._id,
@@ -760,33 +760,44 @@ export const getUser = async (req, res) => {
       location: fullUser.location,
       userType:fullUser.userType,
       clientId: fullUser.clientId,
+ 
+      // Institute / education fields
       institute:fullUser.instituteName,
+      instituteName: fullUser.instituteName,
+      guardianName: fullUser.guardianName,
+      guardianContact: fullUser.guardianContact,
+ 
+      // Professional fields
+      organizationName: fullUser.organizationName,
+      emergencyContactName: fullUser.emergencyContactName,
+      emergencyContactNumber: fullUser.emergencyContactNumber,
+ 
+      // KYC fields
+      aadhar: fullUser.aadhaarNumber,
+      aadhaarNumber: fullUser.aadhaarNumber,
+      aadharPhoto: fullUser.aadharPhoto,
+ 
+      // Profile image & preferences
+      profileImage: fullUser.profileImage,
+      whatsappUpdates: fullUser.whatsappUpdates,
+ 
       role: fullUser.role,
-      aadhar:fullUser.aadhaarNumber,
-      guardianName:fullUser.guardianName,
-      guardianContact:fullUser.guardianContact,
     };
-
-    // If user is a client, add client-specific data
-    if (fullUser.role === 'client') {
-      // Add any client-specific fields here
-      // For example:
-      // userResponse.businessName = fullUser.businessName;
-      // userResponse.properties = await getClientProperties(fullUser._id);
-    }
-
+ 
     res.status(200).json({
       success: true,
       user: userResponse
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: "Failed to fetch user", 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user",
+      error: error.message
     });
   }
 };
+ 
+ 
 
 
 export const getUserProfile = async (req, res) => {
