@@ -144,7 +144,11 @@ const userSchema = new mongoose.Schema({
     enum: ['student', 'professional'],
     default: 'student'
   },
+  institute: String,
   instituteName: String,
+  organizationName: String,
+  emergencyContactNumber: String,
+  emergencyContactName: String,
   guardianName: String,
   guardianContact: String,
   allocationStatus: {

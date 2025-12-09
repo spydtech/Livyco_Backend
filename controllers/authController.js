@@ -877,8 +877,13 @@ export const updateUserProfile = async (req, res) => {
     user.dob = dob || user.dob;
     user.phone = phone || user.phone;
     user.aadhaarNumber = aadhaarNumber || user.aadhaarNumber;
+    user.aadharPhoto = aadharPhoto || user.aadharPhoto;
     user.userType = userType || user.userType;
     user.institute = institute || user.institute;
+    user.instituteName = institute || user.instituteName;
+    user.organizationName = institute || user.organizationName;
+    user.emergencyContactNumber = guardianContact || user.emergencyContactNumber;
+    user.emergencyContactName = guardianName || user.emergencyContactName;
     user.guardianName = guardianName || user.guardianName;
     user.guardianContact = guardianContact || user.guardianContact;
     user.whatsappUpdates = whatsappUpdates !== undefined ? whatsappUpdates : user.whatsappUpdates;
@@ -890,7 +895,17 @@ export const updateUserProfile = async (req, res) => {
         await cloudinary.uploader.destroy(user.profileImagePublicId);
       }
       user.profileImage = req.file.path;
+
       user.profileImagePublicId = req.file.filename;
+    }
+    //handle aadhar photo upload only if file exists
+    if (req.file) {
+      // Delete old aadhar photo from Cloudinary if exists
+      if (user.aadharPhotoPublicId) {
+        await cloudinary.uploader.destroy(user.aadharPhotoPublicId);
+      }
+      user.aadharPhoto = req.file.path;
+      user.aadharPhotoPublicId = req.file.filename;
     }
  
     const updatedUser = await user.save();
