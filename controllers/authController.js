@@ -859,7 +859,7 @@ const upload = multer({
 // Updated updateUserProfile function with Cloudinary
 export const updateUserProfile = async (req, res) => {
   try {
-    const { name, location, email, gender, dob, phone, aadhaarNumber, aadharPhoto, userType, institute, guardianName, guardianContact, whatsappUpdates } = req.body;
+    const { name, location, email, gender, dob, phone, aadhaarNumber, aadharPhoto, userType, institute, instituteName, guardianName, guardianContact, organizationName, emergencyContactName, emergencyContactNumber, whatsappUpdates } = req.body;
     const user = await User.findById(req.user.id);
    
     if (!user) {
@@ -869,7 +869,7 @@ export const updateUserProfile = async (req, res) => {
       });
     }
  
-    // Update fields
+    // Update basic fields
     user.name = name || user.name;
     user.location = location || user.location;
     user.email = email || user.email;
@@ -879,14 +879,43 @@ export const updateUserProfile = async (req, res) => {
     user.aadhaarNumber = aadhaarNumber || user.aadhaarNumber;
     user.aadharPhoto = aadharPhoto || user.aadharPhoto;
     user.userType = userType || user.userType;
-    user.institute = institute || user.institute;
-    user.instituteName = institute || user.instituteName;
-    user.organizationName = institute || user.organizationName;
-    user.emergencyContactNumber = guardianContact || user.emergencyContactNumber;
-    user.emergencyContactName = guardianName || user.emergencyContactName;
-    user.guardianName = guardianName || user.guardianName;
-    user.guardianContact = guardianContact || user.guardianContact;
     user.whatsappUpdates = whatsappUpdates !== undefined ? whatsappUpdates : user.whatsappUpdates;
+ 
+    // Update fields based on userType
+    if (userType === "student") {
+      // Update student fields
+      const instituteValue = instituteName || institute;
+      if (instituteValue !== undefined) {
+        user.institute = instituteValue !== '' ? instituteValue : '';
+        user.instituteName = instituteValue !== '' ? instituteValue : '';
+      }
+      if (guardianName !== undefined) {
+        user.guardianName = guardianName !== '' ? guardianName : '';
+      }
+      if (guardianContact !== undefined) {
+        user.guardianContact = guardianContact !== '' ? guardianContact : '';
+      }
+      // Clear professional fields
+      user.organizationName = '';
+      user.emergencyContactName = '';
+      user.emergencyContactNumber = '';
+    } else if (userType === "professional") {
+      // Update professional fields
+      if (organizationName !== undefined) {
+        user.organizationName = organizationName !== '' ? organizationName : '';
+      }
+      if (emergencyContactName !== undefined) {
+        user.emergencyContactName = emergencyContactName !== '' ? emergencyContactName : '';
+      }
+      if (emergencyContactNumber !== undefined) {
+        user.emergencyContactNumber = emergencyContactNumber !== '' ? emergencyContactNumber : '';
+      }
+      // Clear student fields
+      user.institute = '';
+      user.instituteName = '';
+      user.guardianName = '';
+      user.guardianContact = '';
+    }
  
     // Handle profile image upload only if file exists
     if (req.file) {
@@ -895,7 +924,7 @@ export const updateUserProfile = async (req, res) => {
         await cloudinary.uploader.destroy(user.profileImagePublicId);
       }
       user.profileImage = req.file.path;
-
+ 
       user.profileImagePublicId = req.file.filename;
     }
     //handle aadhar photo upload only if file exists
@@ -928,8 +957,12 @@ export const updateUserProfile = async (req, res) => {
         aadharPhoto: updatedUser.aadharPhoto,
         userType: updatedUser.userType,
         institute: updatedUser.institute,
+        instituteName: updatedUser.instituteName,
         guardianName: updatedUser.guardianName,
         guardianContact: updatedUser.guardianContact,
+        organizationName: updatedUser.organizationName,
+        emergencyContactName: updatedUser.emergencyContactName,
+        emergencyContactNumber: updatedUser.emergencyContactNumber,
         whatsappUpdates: updatedUser.whatsappUpdates
       }
     });
@@ -946,7 +979,7 @@ export const updateUserProfile = async (req, res) => {
       error: error.message
     });
   }
-};  
+};
 
 // Updated deleteUserProfile function with Cloudinary
 export const deleteUserProfile = async (req, res) => {
