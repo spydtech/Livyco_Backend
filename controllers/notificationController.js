@@ -3172,6 +3172,146 @@ class NotificationService {
     }
   }
 
+  static async createVacateRejectionNotification(vacateRequest, property, rejectionReason, rejectedByUserId) {
+      try {
+        console.log('🔴 Creating vacate rejection notification:', {
+          vacateRequestId: vacateRequest._id,
+          propertyName: property.name,
+          rejectionReason
+        });
+        
+        const notifications = [];
+        
+        // Get user details
+        const user = await User.findById(vacateRequest.userId);
+        const rejectedByUser = await User.findById(rejectedByUserId);
+        const rejectedByName = rejectedByUser ? rejectedByUser.name : 'Unknown';
+        
+        // 1. User notification (Tenant)
+        const userNotification = {
+          userId: vacateRequest.userId,
+          bookingId: vacateRequest.bookingId,
+          propertyId: vacateRequest.propertyId,
+          type: 'vacate_rejected',
+          title: 'Vacate Request Rejected ❌',
+          message: `Your vacate request for "${property.name}" has been rejected. Reason: ${rejectionReason || 'Not specified'}`,
+          priority: 'high',
+          metadata: {
+            bookingId: vacateRequest.bookingId,
+            propertyId: vacateRequest.propertyId,
+            propertyName: property.name,
+            vacateRequestId: vacateRequest._id,
+            rejectedBy: rejectedByUserId,
+            rejectedByName: rejectedByName,
+            rejectionReason: rejectionReason,
+            rejectedAt: new Date(),
+            action: 'rejected',
+            notificationFor: 'user'
+          },
+          isRead: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        notifications.push(userNotification);
+        
+        console.log(`👤 Created rejection notification for user: ${user?.name || vacateRequest.userId}`);
+  
+        // 2. Client notification (Property Owner)
+        const clientUser = await User.findOne({ clientId: property.clientId });
+        if (clientUser) {
+          const clientNotification = {
+            userId: clientUser._id,
+            clientId: property.clientId,
+            bookingId: vacateRequest.bookingId,
+            propertyId: vacateRequest.propertyId,
+            type: 'vacate_rejected',
+            title: 'Vacate Request Rejected',
+            message: `You rejected a vacate request for "${property.name}". Reason: ${rejectionReason || 'Not specified'}`,
+            priority: 'medium',
+            metadata: {
+              bookingId: vacateRequest.bookingId,
+              propertyId: vacateRequest.propertyId,
+              propertyName: property.name,
+              vacateRequestId: vacateRequest._id,
+              rejectedBy: rejectedByUserId,
+              rejectedByName: rejectedByName,
+              rejectionReason: rejectionReason,
+              rejectedAt: new Date(),
+              action: 'rejected',
+              notificationFor: 'client'
+            },
+            isRead: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          notifications.push(clientNotification);
+          console.log(`🏢 Created rejection notification for client: ${clientUser._id}`);
+        }
+  
+        // 3. Admin notification
+        const adminNotification = {
+          adminId: 'admin',
+          bookingId: vacateRequest.bookingId,
+          propertyId: vacateRequest.propertyId,
+          type: 'vacate_rejected',
+          title: 'Vacate Request Rejected',
+          message: `Vacate request for "${property.name}" has been rejected by ${rejectedByName}. Reason: ${rejectionReason || 'Not specified'}`,
+          priority: 'medium',
+          metadata: {
+            bookingId: vacateRequest.bookingId,
+            propertyId: vacateRequest.propertyId,
+            propertyName: property.name,
+            vacateRequestId: vacateRequest._id,
+            clientId: property.clientId,
+            rejectedBy: rejectedByUserId,
+            rejectedByName: rejectedByName,
+            rejectionReason: rejectionReason,
+            rejectedAt: new Date(),
+            action: 'rejected',
+            notificationFor: 'admin'
+          },
+          isRead: false,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        notifications.push(adminNotification);
+        console.log(`👑 Created rejection notification for admin`);
+  
+        // Create all notifications
+        if (notifications.length > 0) {
+          const createdNotifications = await Notification.insertMany(notifications);
+          console.log(`✅ Successfully created ${createdNotifications.length} rejection notifications`);
+          
+          console.log(`
+          📊 Vacate Rejection Notification Summary:
+          =========================================
+          Property: ${property.name}
+          Request ID: ${vacateRequest._id}
+          Rejection Reason: ${rejectionReason || 'Not specified'}
+          ------------------
+          User Notified: ✅
+          Client Notified: ${property.clientId ? '✅' : '❌'}
+          Admin Notified: ✅
+          Total: ${createdNotifications.length}
+          =========================================
+          `);
+          
+          return createdNotifications;
+        } else {
+          console.log('⚠️ No notifications created for vacate rejection');
+          return [];
+        }
+      } catch (error) {
+        console.error('❌ Error creating vacate rejection notifications:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          stack: error.stack,
+          vacateRequestId: vacateRequest?._id
+        });
+        throw error;
+      }
+    }
+
   // Helper methods for payment notifications
   static getPaymentTitle(paymentType, recipient) {
     const titles = {

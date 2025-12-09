@@ -1009,3 +1009,94 @@ export const getAllUsers = async (req, res) => {
     });
   }
 };
+
+
+export const uploadProfileImage = async (req, res) => {
+  try {
+    const userId = req.user.id;
+   
+    console.log("=== PROFILE IMAGE UPLOAD START ===");
+    console.log("User ID:", userId);
+    console.log("File received:", req.file);
+ 
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an image file"
+      });
+    }
+ 
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+ 
+    // Upload to Cloudinary
+    console.log("Uploading to Cloudinary...");
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "profile-images",
+      transformation: [
+        { width: 200, height: 200, crop: "fill" },
+        { quality: "auto:good" }
+      ]
+    });
+ 
+    console.log("Cloudinary upload successful:", result.secure_url);
+ 
+    // Delete old profile image from Cloudinary if exists
+    if (user.profileImagePublicId) {
+      console.log("Deleting old image from Cloudinary:", user.profileImagePublicId);
+      try {
+        await cloudinary.uploader.destroy(user.profileImagePublicId);
+      } catch (cleanupError) {
+        console.error("Error deleting old image:", cleanupError);
+        // Continue even if cleanup fails
+      }
+    }
+ 
+    // Update user with new image
+    user.profileImage = result.secure_url;
+    user.profileImagePublicId = result.public_id;
+    await user.save();
+ 
+    // Delete local file after upload
+    if (req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+ 
+    console.log("=== PROFILE IMAGE UPLOAD SUCCESS ===");
+ 
+    res.status(200).json({
+      success: true,
+      message: "Profile image uploaded successfully",
+      profileImage: result.secure_url,
+      user: {
+        id: user._id,
+        name: user.name,
+        profileImage: user.profileImage,
+        clientId: user.clientId,
+        phone: user.phone,
+        email: user.email,
+        role: user.role
+      }
+    });
+ 
+  } catch (error) {
+    console.error('=== PROFILE IMAGE UPLOAD ERROR ===');
+    console.error('Error:', error);
+   
+    // Cleanup on error
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+   
+    res.status(500).json({
+      success: false,
+      message: "Failed to upload profile image",
+      error: error.message
+    });
+  }
+};

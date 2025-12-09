@@ -14,7 +14,8 @@ import {
   getAvailableRoomsAndBeds, 
   getAvailableBedsByRoomType, 
   getAllAvailableBeds, 
-  getBookingWithPaymentDetails
+  getBookingWithPaymentDetails,
+  updateBookingStatus
 //   confirmBookingAfterPayment
 } from "../controllers/bookingController.js";
 
@@ -31,6 +32,7 @@ router.get("/bookings", verifyToken, getallBookings);
 router.get("/user/bookings", verifyToken, getBookingWithPaymentDetails);
 router.post("/bookings/check-availability", checkRoomAvailability);
 router.post("/bookings/:bookingId/cancel", verifyToken, cancelBooking);
+router.put("/bookings/:bookingId/status", verifyToken, updateBookingStatus);
 // router.post("/bookings/:bookingId/confirm-payment", verifyToken, confirmBookingAfterPayment);
 router.get('/bookings/availability/property/:propertyId/all-beds', verifyToken, getAllAvailableBeds);
 router.get('/bookings/availability/property/:propertyId', verifyToken, getAvailableRoomsAndBeds);

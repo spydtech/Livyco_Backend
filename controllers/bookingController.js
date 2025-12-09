@@ -7075,3 +7075,239 @@ export const getBookingWithPaymentDetails = async (req, res) => {
     });
   }
 };
+
+
+
+
+export const updateBookingStatus = async (req, res) => {
+  try {
+    console.log('📝 Updating booking status...', req.params, req.body);
+ 
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+ 
+    const { bookingId } = req.params;
+    const { bookingStatus, reason } = req.body;
+ 
+    // Validate booking ID
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking ID format'
+      });
+    }
+ 
+    // Validate booking status
+    const validBookingStatuses = ['pending_payment', 'confirmed', 'approved', 'cancelled', 'checked_in', 'checked_out'];
+    if (!bookingStatus || !validBookingStatuses.includes(bookingStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Valid booking status is required. Allowed values: ${validBookingStatuses.join(', ')}`
+      });
+    }
+ 
+    // Find the booking
+    const booking = await Booking.findById(bookingId);
+   
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+ 
+    // Check user permissions
+    const userId = req.user.id;
+    const userRole = req.user.role;
+   
+    console.log('👤 User attempting status update:', {
+      userId,
+      userRole,
+      bookingUserId: booking.userId,
+      bookingClientId: booking.clientId,
+      currentBookingStatus: booking.bookingStatus
+    });
+ 
+    let hasPermission = false;
+    let updateData = {};
+ 
+    // User can cancel their own booking
+    if (userRole === 'user' && booking.userId.toString() === userId) {
+      if (bookingStatus === 'cancelled') {
+        if (booking.bookingStatus === 'cancelled') {
+          return res.status(400).json({
+            success: false,
+            message: 'Booking is already cancelled'
+          });
+        }
+       
+        if (booking.bookingStatus === 'checked_in') {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot cancel booking after check-in'
+          });
+        }
+       
+        hasPermission = true;
+        updateData.bookingStatus = 'cancelled';
+        if (booking.paymentInfo) {
+          updateData['paymentInfo.paymentStatus'] = 'refund_pending';
+        }
+      }
+    }
+   
+    // Client can update bookings for their properties
+    else if (userRole === 'client') {
+      // Check if client owns this property
+      const clientId = req.user.clientId || userId;
+      const property = await Property.findById(booking.propertyId);
+     
+      if (property && property.clientId === clientId) {
+        hasPermission = true;
+       
+        // Clients can approve bookings
+        if (bookingStatus === 'approved') {
+          updateData.bookingStatus = 'approved';
+          updateData.approvedBy = userId;
+          updateData.approvedAt = new Date();
+        }
+        // Clients can reject bookings
+        else if (bookingStatus === 'rejected') {
+          updateData.bookingStatus = 'cancelled'; // Map to cancelled status
+          updateData.rejectedBy = userId;
+          updateData.rejectionReason = reason || 'Booking rejected by property owner';
+        }
+        // Clients can mark as checked in/out
+        else if (bookingStatus === 'checked_in' || bookingStatus === 'checked_out') {
+          updateData.bookingStatus = bookingStatus;
+        }
+        // Clients can also confirm or cancel
+        else if (bookingStatus === 'confirmed' || bookingStatus === 'cancelled') {
+          updateData.bookingStatus = bookingStatus;
+          if (bookingStatus === 'cancelled' && booking.paymentInfo) {
+            updateData['paymentInfo.paymentStatus'] = 'refund_pending';
+          }
+        }
+      }
+    }
+   
+    // Admin can update any booking
+    else if (userRole === 'admin') {
+      hasPermission = true;
+      updateData.bookingStatus = bookingStatus;
+     
+      // Special handling for certain statuses
+      if (bookingStatus === 'approved') {
+        updateData.approvedBy = userId;
+        updateData.approvedAt = new Date();
+      }
+      else if (bookingStatus === 'cancelled' && booking.paymentInfo) {
+        updateData['paymentInfo.paymentStatus'] = 'refund_pending';
+      }
+     
+      if (reason && bookingStatus === 'cancelled') {
+        updateData.rejectionReason = reason;
+      }
+    }
+   
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this booking status'
+      });
+    }
+   
+    // Update the booking
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      bookingId,
+      updateData,
+      {
+        new: true,
+        runValidators: true
+      }
+    )
+    .populate('userId', 'name email phone')
+    .populate('propertyId', 'name locality city')
+    .populate('approvedBy', 'name');
+   
+    console.log('✅ Booking status updated successfully:', updatedBooking._id);
+   
+    // Create notification
+    try {
+      let notificationType = 'booking_updated';
+     
+      if (bookingStatus === 'approved') {
+        notificationType = 'booking_approved';
+      } else if (bookingStatus === 'cancelled') {
+        notificationType = 'booking_cancelled';
+      } else if (bookingStatus === 'checked_in') {
+        notificationType = 'booking_checked_in';
+      } else if (bookingStatus === 'checked_out') {
+        notificationType = 'booking_checked_out';
+      }
+     
+      await NotificationService.createBookingNotification(
+        updatedBooking,
+        notificationType,
+        {
+          oldStatus: booking.bookingStatus,
+          newStatus: updatedBooking.bookingStatus,
+          updatedBy: {
+            id: userId,
+            role: userRole,
+            name: req.user.name || 'System'
+          },
+          reason: reason
+        }
+      );
+      console.log('✅ Status update notification created:', notificationType);
+    } catch (notificationError) {
+      console.error('❌ Failed to create status update notification:', notificationError);
+    }
+   
+    return res.status(200).json({
+      success: true,
+      message: 'Booking status updated successfully',
+      booking: {
+        id: updatedBooking._id,
+        bookingStatus: updatedBooking.bookingStatus,
+        paymentStatus: updatedBooking.paymentInfo?.paymentStatus || 'pending',
+        property: updatedBooking.propertyId ? {
+          name: updatedBooking.propertyId.name,
+          locality: updatedBooking.propertyId.locality,
+          city: updatedBooking.propertyId.city
+        } : null,
+        user: updatedBooking.userId ? {
+          name: updatedBooking.userId.name,
+          email: updatedBooking.userId.email,
+          phone: updatedBooking.userId.phone
+        } : null,
+        approvedBy: updatedBooking.approvedBy ? updatedBooking.approvedBy.name : null,
+        approvedAt: updatedBooking.approvedAt,
+        updatedAt: updatedBooking.updatedAt
+      }
+    });
+   
+  } catch (error) {
+    console.error('❌ Update booking status error:', error);
+   
+    // Handle specific errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(err => err.message)
+      });
+    }
+   
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};

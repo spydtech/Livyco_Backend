@@ -1313,64 +1313,136 @@ export const rejectVacateRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
     const { notes } = req.body;
-   
+    
     console.log('Rejecting vacate request:', { requestId, notes });
-   
+    
     if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
         message: 'Authentication required'
       });
     }
-   
+    
     if (!mongoose.Types.ObjectId.isValid(requestId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid request ID format'
       });
     }
-   
+    
     const vacateRequest = await VacateRequest.findById(requestId)
-      .populate('propertyId');
-   
+      .populate('userId', 'name email phone')
+      .populate('propertyId', 'name clientId')
+      .populate('bookingId');
+    
     if (!vacateRequest) {
       return res.status(404).json({
         success: false,
         message: 'Vacate request not found'
       });
     }
-   
+    
     // Check if user has permission (client owns the property)
     const property = await Property.findById(vacateRequest.propertyId);
     const clientId = req.user.clientId || req.user.id;
-   
+    
     if (!property || property.clientId.toString() !== clientId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to process this request'
       });
     }
-   
+    
     if (vacateRequest.status !== 'pending') {
       return res.status(400).json({
         success: false,
         message: 'No pending vacate request found'
       });
     }
-   
+    
     // Update vacate request status to rejected
     vacateRequest.status = 'rejected';
     vacateRequest.rejectedBy = req.user.id;
     vacateRequest.rejectedAt = new Date();
     vacateRequest.rejectionNotes = notes || '';
-   
+    
     await vacateRequest.save();
-   
+
+    // ✅ ADD NOTIFICATIONS FOR REJECTION
+    try {
+      // User notification
+      await NotificationService.createNotification({
+        userId: vacateRequest.userId._id,
+        type: 'vacate_rejected',
+        title: 'Vacate Request Rejected ❌',
+        message: `Your vacate request for "${property.name}" has been rejected. Reason: ${notes || 'Not specified'}`,
+        priority: 'high',
+        metadata: {
+          bookingId: vacateRequest.bookingId,
+          propertyId: vacateRequest.propertyId,
+          propertyName: property.name,
+          vacateRequestId: vacateRequest._id,
+          rejectedAt: vacateRequest.rejectedAt,
+          rejectionReason: notes || 'Not specified',
+          action: 'rejected',
+          notificationFor: 'user'
+        },
+        isRead: false
+      });
+
+      // Client notification
+      const clientUser = await User.findOne({ clientId: property.clientId });
+      if (clientUser) {
+        await NotificationService.createNotification({
+          userId: clientUser._id,
+          clientId: property.clientId,
+          type: 'vacate_rejected',
+          title: 'Vacate Request Rejected',
+          message: `Vacate request for "${property.name}" has been rejected. Reason: ${notes || 'Not specified'}`,
+          priority: 'medium',
+          metadata: {
+            bookingId: vacateRequest.bookingId,
+            propertyId: vacateRequest.propertyId,
+            propertyName: property.name,
+            vacateRequestId: vacateRequest._id,
+            action: 'rejected',
+            notificationFor: 'client'
+          },
+          isRead: false
+        });
+      }
+
+      // Admin notification
+      await NotificationService.createNotification({
+        adminId: 'admin',
+        type: 'vacate_rejected',
+        title: 'Vacate Request Rejected',
+        message: `Vacate request for "${property.name}" has been rejected. Reason: ${notes || 'Not specified'}`,
+        priority: 'medium',
+        metadata: {
+          bookingId: vacateRequest.bookingId,
+          propertyId: vacateRequest.propertyId,
+          propertyName: property.name,
+          vacateRequestId: vacateRequest._id,
+          clientId: property.clientId,
+          rejectionReason: notes || 'Not specified',
+          action: 'rejected',
+          notificationFor: 'admin'
+        },
+        isRead: false
+      });
+
+      console.log('✅ Notifications created for vacate rejection');
+    } catch (notificationError) {
+      console.error('❌ Error creating rejection notifications:', notificationError);
+    }
+    
     res.status(200).json({
       success: true,
-      message: 'Vacate request rejected successfully'
+      message: 'Vacate request rejected successfully',
+      rejectionNotes: notes
     });
-   
+    
   } catch (error) {
     console.error('Reject vacate request error:', error);
     res.status(500).json({

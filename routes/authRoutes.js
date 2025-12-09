@@ -4,6 +4,7 @@ import { sendOTP,
   verifyFirebaseOTP, 
   register, 
   getUser, 
+  uploadProfileImage,
   verifyOTP, getAllUsers, updateUserProfile, addTenantByClient, healthCheck } from "../controllers/authController.js";
 import {
   registerProperty,
@@ -95,7 +96,8 @@ import {
 import multer from "multer";
 
 const router = express.Router();
-// const upload = multer({ dest: 'uploads/' });
+
+const profileUpload = upload.single('profileImage');uploadProfileImage
 //Admin routes
 
 
@@ -222,6 +224,7 @@ router.post("/verify-otp",  verifyOTP);
 router.post("/register",  register);
 router.get('/user', verifyToken, getUser);
 router.put('/user/profile', verifyToken, updateUserProfile);
+router.post('/user/upload-profile-image', verifyToken, profileUpload, uploadProfileImage);
 router.get('/users', getAllUsers);
 //client manul registration user
 router.post('/client/register-by-client', verifyToken, aadharUpload.single('aadharPhoto'), addTenantByClient);
