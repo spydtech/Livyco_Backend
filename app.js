@@ -219,6 +219,7 @@ import { existsSync } from 'fs';
 import Admin from "./models/Admin.js";
 import User from "./models/User.js";
 import offlineBookingRoutes from "./routes/offlineBookingRoutes.js";
+import contactRoutes from "./routes/contactRoutes.js";
 
 dotenv.config();
 
@@ -362,6 +363,8 @@ app.use("/api/custom-reviews", CustomReviewRoutes);
 // app.use("/api/vacate", vacateRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use('/api/offline-bookings', offlineBookingRoutes);
+app.use('/api/contacts', contactRoutes);
+
 
 // Health check endpoint
 app.get("/health", (req, res) => {

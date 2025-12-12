@@ -5,6 +5,7 @@ import { sendOTP,
   register, 
   getUser, 
   uploadProfileImage,
+  deleteUserProfile,
   verifyOTP, getAllUsers, updateUserProfile, addTenantByClient, healthCheck } from "../controllers/authController.js";
 import {
   registerProperty,
@@ -223,6 +224,7 @@ router.post("/send-otp", sendOTP);
 router.post("/verify-otp",  verifyOTP);
 router.post("/register",  register);
 router.get('/user', verifyToken, getUser);
+router.delete('/profile', verifyToken, deleteUserProfile);
 router.put('/user/profile', verifyToken, updateUserProfile);
 router.post('/user/upload-profile-image', verifyToken, profileUpload, uploadProfileImage);
 router.get('/users', getAllUsers);
