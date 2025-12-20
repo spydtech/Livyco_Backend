@@ -6,6 +6,9 @@ import { sendOTP,
   getUser, 
   uploadProfileImage,
   deleteUserProfile,
+  // Add these imports
+  googleSignIn,
+  checkGoogleUser,
   verifyOTP, getAllUsers, updateUserProfile, addTenantByClient, healthCheck } from "../controllers/authController.js";
 import {
   registerProperty,
@@ -230,6 +233,10 @@ router.post('/user/upload-profile-image', verifyToken, profileUpload, uploadProf
 router.get('/users', getAllUsers);
 //client manul registration user
 router.post('/client/register-by-client', verifyToken, aadharUpload.single('aadharPhoto'), addTenantByClient);
+// Google Sign-In Routes
+router.post("/google-signin", googleSignIn);
+router.post("/check-google-user", checkGoogleUser);
+
 
 //Chat routes
 // router.get('/chat/users',verifyToken, getUsers);

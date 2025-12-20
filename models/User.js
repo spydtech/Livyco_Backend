@@ -87,12 +87,29 @@ const userSchema = new mongoose.Schema({
     sparse: true,
     match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please fill a valid email address']
   },
-  phone: {
-    type: String,
-    required: true,
-    unique: true,
-    match: [/^[0-9]{10,15}$/, 'Enter a valid phone number']
+  // phone: {
+  //   type: String,
+  //   required: true,
+  //   unique: true,
+  //   match: [/^[0-9]{10,15}$/, 'Enter a valid phone number']
+  // },
+   phone: {
+  type: String,
+  // Make it optional for Google auth users
+  required: function() {
+    return this.authMethod !== 'google';
   },
+  validate: {
+    validator: function(v) {
+      // Only validate if phone exists
+      if (!v) return true; // Allow empty for Google users
+      return /^[0-9]{10,15}$/.test(v);
+    },
+    message: props => `${props.value} is not a valid phone number!`
+  },
+  unique: true,
+  sparse: true // ✅ This allows multiple null values while keeping uniqueness for non-null values
+},
   location: { 
     type: String, 
     // required: true 
@@ -156,6 +173,33 @@ const userSchema = new mongoose.Schema({
     enum: ['not allocated', 'allocated', 'terminated'],
     default: 'not allocated'
   },
+
+  // Google Sign-In Fields
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  firebaseUid: {
+  type: String,
+  unique: true,
+  sparse: true // ✅ This is important to allow multiple null values
+},
+  
+  authMethod: {
+    type: String,
+    enum: ['phone', 'google', 'email'],
+    default: 'phone'
+  },
+  
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  
+  lastLogin: {
+    type: Date
+  },
 // In your User model
 lastMessage: { 
   type: mongoose.Schema.Types.ObjectId,
@@ -206,8 +250,18 @@ userSchema.pre('save', async function(next) {
       return next(err);
     }
   }
+
+   // Update the updatedAt field
+  if (this.isModified()) {
+    this.updatedAt = new Date();
+  }
   next();
 });
+// Update lastLogin on successful login
+userSchema.methods.updateLastLogin = async function() {
+  this.lastLogin = new Date();
+  await this.save();
+};
 
 const User = mongoose.model('User', userSchema);
 export default User;

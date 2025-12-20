@@ -403,6 +403,7 @@ const connectDB = async () => {
       socketTimeoutMS: 45000
     });
     console.log("✅ MongoDB connected");
+    console.log("✅ Google OAuth Client ID:", process.env.GOOGLE_CLIENT_ID ? "Configured" : "Not Configured");
     await initializeAdmin();
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
