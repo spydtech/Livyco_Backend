@@ -1966,6 +1966,49 @@ const bookingSchema = new mongoose.Schema({
     ref: 'Property',
     required: true,
   },
+   // Media field for images (stored as simple objects like Media schema)
+  media: {
+    images: [{
+      url: { 
+        type: String, 
+        required: true 
+      },
+      public_id: { 
+        type: String, 
+        required: true 
+      },
+      resource_type: { 
+        type: String, 
+        default: 'image' 
+      },
+      isPrimary: {
+        type: Boolean,
+        default: false
+      }
+    }],
+    videos: [{
+      url: { 
+        type: String, 
+        required: true 
+      },
+      public_id: { 
+        type: String, 
+        required: true 
+      },
+      resource_type: { 
+        type: String, 
+        default: 'video' 
+      }
+    }]
+  },
+  
+  // Legacy mediaId for backward compatibility (optional)
+  mediaId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Media',
+    default: null
+  },
+  
   roomType: {
     type: {
       type: String,

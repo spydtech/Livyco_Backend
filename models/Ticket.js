@@ -5,29 +5,59 @@ const ticketSchema = new mongoose.Schema(
     ticketId: {
       type: Number,
       required: true,
-      unique: true, // ensures no duplicates
+      unique: true,
     },
     clientId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // assuming your client is stored in User model
+      type: String, // Store as String (LYVC00001)
       required: true,
     },
-    livycoId: {type: String, required: true},
-    name: { type: String, required: true },
-    email: { type: String, required: true },
-    category: { type: String, required: true },
-    comment: { type: String },
+    livycoId: {
+      type: String,
+      required: true,
+    },
+    name: {
+      type: String,
+      required: true,
+    },
+    email: {
+      type: String,
+      required: true,
+    },
+    phone: {
+      type: String,
+      default: "",
+    },
+    category: {
+      type: String,
+      required: true,
+    },
+    comment: {
+      type: String,
+      default: "",
+    },
     status: {
       type: String,
       enum: ["Open", "Resolved", "Closed"],
       default: "Open",
     },
-     assignedTo: {
+    priority: {
+      type: String,
+      enum: ["Low", "Medium", "High"],
+      default: "Medium",
+    },
+    assignedTo: {
       type: String,
       default: "Unassigned",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
+
+// Create indexes for better performance
+ticketSchema.index({ clientId: 1 });
+ticketSchema.index({ ticketId: 1 });
+ticketSchema.index({ status: 1 });
 
 export default mongoose.model("Ticket", ticketSchema);

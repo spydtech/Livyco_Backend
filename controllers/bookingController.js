@@ -4689,7 +4689,8 @@ export const createBooking = async (req, res) => {
     const {
       propertyId,
       roomType,
-      mediaId,
+      mediaId, // Legacy single media ID (optional)
+      media, // New: Array of media objects
       selectedRooms,
       moveInDate,
       endDate,
@@ -4705,6 +4706,7 @@ export const createBooking = async (req, res) => {
       propertyId,
       roomType,
       mediaId,
+      media: media ? `Array of ${media.length} items` : 'No media',
       selectedRooms,
       moveInDate,
       endDate,
@@ -4833,6 +4835,70 @@ export const createBooking = async (req, res) => {
 
     console.log('🛏️ Processed room details:', roomDetails);
 
+    // Process media data - SIMPLIFIED VERSION (like Media schema)
+    let bookingMedia = {
+      images: [],
+      videos: []
+    };
+   
+    if (media && Array.isArray(media)) {
+      console.log('📸 Processing media array:', media);
+     
+      // Process multiple media items
+      media.forEach((item, index) => {
+        // Ensure we have a valid URL
+        const url = item.url || item;
+        const thumbnailUrl = item.thumbnailUrl || url;
+       
+        // Extract public_id from URL or generate one
+        let public_id = item.public_id || item.key || item.fileName || `booking_${Date.now()}_${index}`;
+       
+        // If it's a Cloudinary URL, try to extract public_id
+        if (url.includes('cloudinary.com') && url.includes('/upload/')) {
+          const parts = url.split('/upload/');
+          if (parts[1]) {
+            const uploadParts = parts[1].split('/');
+            if (uploadParts.length > 1) {
+              public_id = uploadParts[uploadParts.length - 1].split('.')[0];
+            }
+          }
+        }
+       
+        // Determine if it's an image or video based on URL or type
+        const isImage = item.type === 'image' ||
+                       url.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i) ||
+                       item.mimeType?.startsWith('image/');
+       
+        if (isImage) {
+          bookingMedia.images.push({
+            url: url,
+            public_id: public_id,
+            resource_type: 'image',
+            isPrimary: item.isPrimary || (index === 0)
+          });
+        } else {
+          bookingMedia.videos.push({
+            url: url,
+            public_id: public_id,
+            resource_type: item.type || 'video'
+          });
+        }
+      });
+     
+      console.log('✅ Processed media:', {
+        imagesCount: bookingMedia.images.length,
+        videosCount: bookingMedia.videos.length
+      });
+    } else if (mediaId) {
+      // Legacy single media ID support
+      console.log('⚠️ Using legacy mediaId:', mediaId);
+      // You might want to fetch the actual media from Media collection here
+    } else {
+      console.log('⚠️ No media provided in request');
+    }
+ 
+    console.log('📸 Final processed media:', bookingMedia);
+
     // Calculate pricing - FIXED: Use provided pricing or calculate defaults
     let monthlyRent = pricing?.monthlyRent || 1; // Default to 1 if not provided
     let totalRent = pricing?.totalRent || monthlyRent;
@@ -4901,7 +4967,8 @@ export const createBooking = async (req, res) => {
       userId: req.user.id,
       clientId: property.clientId,
       propertyId,
-      mediaId: mediaId || null,
+      media: bookingMedia, // Store media as simple objects
+      mediaId: mediaId || null, // Keep legacy mediaId for backward compatibility
       roomType: {
         type: roomType,
         name: roomType,
@@ -4968,6 +5035,7 @@ export const createBooking = async (req, res) => {
         propertyCity: populatedBooking.propertyId.city,
         roomType: populatedBooking.roomType.name,
         rooms: populatedBooking.roomDetails,
+        media: populatedBooking.media, // Return media in response
         mediaId: populatedBooking.mediaId,
         moveInDate: populatedBooking.moveInDate,
         moveOutDate: populatedBooking.moveOutDate,
@@ -5787,18 +5855,240 @@ export const getBookingsByProperty = async (req, res) => {
 // };
 
 
+// export const getUserBookings = async (req, res) => {  
+//   try {
+//     if (!req.user || !req.user.id) {
+//       return res.status(401).json({ 
+//         success: false, 
+//         message: 'Authentication required' 
+//       });
+//     }
+
+//     console.log('🔍 Fetching bookings for user ID:', req.user.id);
+//     console.log('🔍 User role:', req.user.role);
+
+//     // Convert user ID to ObjectId for proper querying
+//     let userId;
+//     try {
+//       userId = new mongoose.Types.ObjectId(req.user.id);
+//       console.log('🔍 Converted user ID to ObjectId:', userId);
+//     } catch (error) {
+//       console.error('❌ Invalid user ID format:', req.user.id);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid user ID format'
+//       });
+//     }
+
+//     // First, check if user exists
+//     const userExists = await User.findById(userId);
+//     if (!userExists) {
+//       console.log('❌ User not found in database with ID:', userId);
+//       return res.status(404).json({
+//         success: false,
+//         message: 'User not found'
+//       });
+//     }
+
+//     console.log('✅ User found:', userExists.name, userExists.email);
+
+//     // Try multiple query approaches to find bookings
+//     let bookings = [];
+
+//     // Approach 1: Direct query with ObjectId
+//     bookings = await Booking.find({ userId: userId })
+//       .populate('propertyId', 'name locality city images')
+//       .sort({ createdAt: -1 })
+//       .lean();
+
+//     console.log('📊 Bookings found with ObjectId query:', bookings.length);
+
+//     // If no bookings found, try with string ID
+//     if (bookings.length === 0) {
+//       console.log('🔄 Trying with string ID query...');
+//       bookings = await Booking.find({ userId: req.user.id })
+//         .populate('propertyId', 'name locality city images')
+//         .sort({ createdAt: -1 })
+//         .lean();
+      
+//       console.log('📊 Bookings found with string ID query:', bookings.length);
+//     }
+
+//     // Debug: Check all bookings in database to see user IDs
+//     if (bookings.length === 0) {
+//       const allBookingsSample = await Booking.find().limit(5).select('userId propertyId bookingStatus').lean();
+//       console.log('📋 Sample of all bookings in database:', allBookingsSample);
+//     }
+
+//     // Process bookings with payment data
+//     const processedBookings = await Promise.all(
+//       bookings.map(async (booking) => {
+//         try {
+//           // Get approved by name if exists
+//           let approvedByName = null;
+//           if (booking.approvedBy) {
+//             const approvedUser = await User.findById(booking.approvedBy).select('name').lean();
+//             approvedByName = approvedUser?.name || null;
+//           }
+
+//           // Calculate payment summary
+//           const paymentSummary = calculatePaymentSummary(booking);
+
+//           // Format room details
+//           const roomDetails = booking.roomDetails || [];
+//           const primaryRoom = roomDetails[0] || {};
+
+//           console.log("fffbbbbgggggg-",booking);
+
+//          return {
+//   id: booking._id,
+//   _id: booking._id,
+//   clientId : booking.clientId,
+//   clientobjectId : booking.approvedBy || 'N/A',
+//   property: booking.propertyId ? {
+//     _id: booking.propertyId._id,
+//     name: booking.propertyId.name,
+//     locality: booking.propertyId.locality,
+//     city: booking.propertyId.city,
+//     images: booking.propertyId.images || []
+//   } : null,
+//   mediaId: booking.mediaId || null,
+   
+//   roomType: booking.roomType?.name || 'N/A',
+//   roomNumber: primaryRoom.roomNumber || 'N/A',
+//   floor: primaryRoom.floor || 'N/A',
+//   bed: primaryRoom.bed || 'N/A',
+//   moveInDate: booking.moveInDate,
+//   moveOutDate: booking.moveOutDate,
+//   durationType: booking.durationType,
+//   durationDays: booking.durationDays,
+//   durationMonths: booking.durationMonths,
+//   personCount: booking.personCount,
+//   bookingStatus: booking.bookingStatus,
+  
+//   // Enhanced Payment Data
+//   paymentInfo: {
+//     paymentStatus: booking.paymentInfo?.paymentStatus || 'pending',
+//     paymentMethod: booking.paymentInfo?.paymentMethod || 'razorpay',
+//     paidAmount: booking.paymentInfo?.paidAmount || 0,
+//     transactionId: booking.paymentInfo?.transactionId || null,
+//     paymentDate: booking.paymentInfo?.paymentDate || null,
+//     razorpayOrderId: booking.paymentInfo?.razorpayOrderId || null,
+//     razorpayPaymentId: booking.paymentInfo?.razorpayPaymentId || null
+//   },
+  
+//   // All Payments History
+//   payments: (booking.payments || []).map(payment => ({
+//     date: payment.date,
+//     amount: payment.amount,
+//     method: payment.method,
+//     status: payment.status,
+//     transactionId: payment.transactionId,
+//     description: payment.description,
+//     razorpayOrderId: payment.razorpayOrderId,
+//     razorpayPaymentId: payment.razorpayPaymentId,
+//     // Include review data if available
+//     review: payment.review ? {
+//       rating: payment.review.rating,
+//       comment: payment.review.comment,
+//       reviewDate: payment.review.reviewDate
+//     } : null,
+//     type: payment.type || 'rent',
+//     month: payment.month,
+//     year: payment.year,
+//     dueDate: payment.dueDate,
+//     paidDate: payment.paidDate
+//   })),
+  
+//   // Payment Requests (from paymentrequest array)
+//   paymentrequest: (booking.paymentrequest || []).map(request => ({
+//     _id: request._id,
+//     date: request.date,
+//     amount: request.amount,
+//     message: request.message,
+//     type: request.type,
+//     userId: request.userId,
+//     status: request.status,
+//     dueDate: request.dueDate,
+//     // Add additional calculated fields for frontend
+//     isOverdue: request.dueDate ? new Date(request.dueDate) < new Date() : false,
+//     daysUntilDue: request.dueDate ? 
+//       Math.ceil((new Date(request.dueDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
+//   })),
+  
+//   // Payment Summary with request statistics
+//   paymentSummary: {
+//     ...paymentSummary,
+//     // Add payment request statistics
+//     pendingRequests: (booking.paymentrequest || []).filter(req => req.status === 'pending').length,
+//     paidRequests: (booking.paymentrequest || []).filter(req => req.status === 'paid').length,
+//     cancelledRequests: (booking.paymentrequest || []).filter(req => req.status === 'cancelled').length,
+//     totalRequestAmount: (booking.paymentrequest || []).reduce((sum, req) => sum + req.amount, 0),
+//     pendingRequestAmount: (booking.paymentrequest || [])
+//       .filter(req => req.status === 'pending')
+//       .reduce((sum, req) => sum + req.amount, 0)
+//   },
+
+//   // Pricing Details
+//   pricing: booking.pricing || {
+//     monthlyRent: 0,
+//     totalRent: 0,
+//     securityDeposit: 0,
+//     advanceAmount: 0,
+//     totalAmount: 0,
+//     maintenanceFee: 0
+//   },
+  
+//   transferStatus: booking.transferStatus || 'pending',
+//   transferDetails: booking.transferDetails || {},
+//   approvedBy: approvedByName,
+//   approvedAt: booking.approvedAt || null,
+//   roomDetails: roomDetails,
+//   customerDetails: booking.customerDetails || {},
+//   createdAt: booking.createdAt,
+//   updatedAt: booking.updatedAt,
+//   outstandingAmount: booking.outstandingAmount || 0
+// };
+//         } catch (error) {
+//           console.error('❌ Error processing booking:', booking._id, error);
+//           return null;
+//         }
+//       })
+//     );
+
+//     // Filter out any null results from errors
+//     const validBookings = processedBookings.filter(booking => booking !== null);
+
+//     console.log('✅ Successfully processed bookings:', validBookings.length);
+
+//     return res.status(200).json({
+//       success: true,
+//       count: validBookings.length,
+//       bookings: validBookings,
+//       message: validBookings.length === 0 ? 'No bookings found for this user' : 'Bookings retrieved successfully'
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Get user bookings error:', error);
+//     return res.status(500).json({
+//       success: false,
+//       message: 'Internal server error',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
+//   }
+// };
 export const getUserBookings = async (req, res) => {  
   try {
     if (!req.user || !req.user.id) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication required' 
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
       });
     }
-
+ 
     console.log('🔍 Fetching bookings for user ID:', req.user.id);
     console.log('🔍 User role:', req.user.role);
-
+ 
     // Convert user ID to ObjectId for proper querying
     let userId;
     try {
@@ -5811,7 +6101,7 @@ export const getUserBookings = async (req, res) => {
         message: 'Invalid user ID format'
       });
     }
-
+ 
     // First, check if user exists
     const userExists = await User.findById(userId);
     if (!userExists) {
@@ -5821,20 +6111,20 @@ export const getUserBookings = async (req, res) => {
         message: 'User not found'
       });
     }
-
+ 
     console.log('✅ User found:', userExists.name, userExists.email);
-
+ 
     // Try multiple query approaches to find bookings
     let bookings = [];
-
+ 
     // Approach 1: Direct query with ObjectId
     bookings = await Booking.find({ userId: userId })
       .populate('propertyId', 'name locality city images')
       .sort({ createdAt: -1 })
       .lean();
-
+ 
     console.log('📊 Bookings found with ObjectId query:', bookings.length);
-
+ 
     // If no bookings found, try with string ID
     if (bookings.length === 0) {
       console.log('🔄 Trying with string ID query...');
@@ -5842,16 +6132,16 @@ export const getUserBookings = async (req, res) => {
         .populate('propertyId', 'name locality city images')
         .sort({ createdAt: -1 })
         .lean();
-      
+     
       console.log('📊 Bookings found with string ID query:', bookings.length);
     }
-
+ 
     // Debug: Check all bookings in database to see user IDs
     if (bookings.length === 0) {
       const allBookingsSample = await Booking.find().limit(5).select('userId propertyId bookingStatus').lean();
       console.log('📋 Sample of all bookings in database:', allBookingsSample);
     }
-
+ 
     // Process bookings with payment data
     const processedBookings = await Promise.all(
       bookings.map(async (booking) => {
@@ -5862,142 +6152,202 @@ export const getUserBookings = async (req, res) => {
             const approvedUser = await User.findById(booking.approvedBy).select('name').lean();
             approvedByName = approvedUser?.name || null;
           }
-
+ 
           // Calculate payment summary
           const paymentSummary = calculatePaymentSummary(booking);
-
+ 
           // Format room details
           const roomDetails = booking.roomDetails || [];
           const primaryRoom = roomDetails[0] || {};
-
-          console.log("fffbbbbgggggg-",booking);
-
+ 
+          // Get property images (both from property and booking media)
+          const propertyImages = booking.propertyId?.images || [];
+          const bookingImages = booking.media?.images || [];
+         
+          // Combine images: Booking media images take precedence, then property images
+          const allImages = [
+            // First add booking media images
+            ...bookingImages.map(img => ({
+              url: img.url,
+              public_id: img.public_id,
+              resource_type: 'image',
+              isPrimary: img.isPrimary,
+              source: 'booking'
+            })),
+            // Then add property images (avoid duplicates if public_id matches)
+            ...propertyImages.filter(propImg =>
+              !bookingImages.some(bkImg => bkImg.public_id === propImg.public_id)
+            ).map(propImg => ({
+              url: propImg.url || propImg,
+              public_id: propImg.public_id || `property_${Date.now()}`,
+              resource_type: 'image',
+              isPrimary: false,
+              source: 'property'
+            }))
+          ];
+ 
+          // Get primary image URL for easy access
+          const primaryImage = allImages.find(img => img.isPrimary) || allImages[0];
+          const primaryImageUrl = primaryImage?.url || null;
+ 
+          console.log('📸 Images for booking', booking._id, {
+            bookingImagesCount: bookingImages.length,
+            propertyImagesCount: propertyImages.length,
+            allImagesCount: allImages.length,
+            primaryImageUrl: primaryImageUrl
+          });
+ 
          return {
-  id: booking._id,
-  _id: booking._id,
-  clientId : booking.clientId,
-  clientobjectId : booking.approvedBy || 'N/A',
-  property: booking.propertyId ? {
-    _id: booking.propertyId._id,
-    name: booking.propertyId.name,
-    locality: booking.propertyId.locality,
-    city: booking.propertyId.city,
-    images: booking.propertyId.images || []
-  } : null,
-  roomType: booking.roomType?.name || 'N/A',
-  roomNumber: primaryRoom.roomNumber || 'N/A',
-  floor: primaryRoom.floor || 'N/A',
-  bed: primaryRoom.bed || 'N/A',
-  moveInDate: booking.moveInDate,
-  moveOutDate: booking.moveOutDate,
-  durationType: booking.durationType,
-  durationDays: booking.durationDays,
-  durationMonths: booking.durationMonths,
-  personCount: booking.personCount,
-  bookingStatus: booking.bookingStatus,
-  
-  // Enhanced Payment Data
-  paymentInfo: {
-    paymentStatus: booking.paymentInfo?.paymentStatus || 'pending',
-    paymentMethod: booking.paymentInfo?.paymentMethod || 'razorpay',
-    paidAmount: booking.paymentInfo?.paidAmount || 0,
-    transactionId: booking.paymentInfo?.transactionId || null,
-    paymentDate: booking.paymentInfo?.paymentDate || null,
-    razorpayOrderId: booking.paymentInfo?.razorpayOrderId || null,
-    razorpayPaymentId: booking.paymentInfo?.razorpayPaymentId || null
-  },
-  
-  // All Payments History
-  payments: (booking.payments || []).map(payment => ({
-    date: payment.date,
-    amount: payment.amount,
-    method: payment.method,
-    status: payment.status,
-    transactionId: payment.transactionId,
-    description: payment.description,
-    razorpayOrderId: payment.razorpayOrderId,
-    razorpayPaymentId: payment.razorpayPaymentId,
-    // Include review data if available
-    review: payment.review ? {
-      rating: payment.review.rating,
-      comment: payment.review.comment,
-      reviewDate: payment.review.reviewDate
-    } : null,
-    type: payment.type || 'rent',
-    month: payment.month,
-    year: payment.year,
-    dueDate: payment.dueDate,
-    paidDate: payment.paidDate
-  })),
-  
-  // Payment Requests (from paymentrequest array)
-  paymentrequest: (booking.paymentrequest || []).map(request => ({
-    _id: request._id,
-    date: request.date,
-    amount: request.amount,
-    message: request.message,
-    type: request.type,
-    userId: request.userId,
-    status: request.status,
-    dueDate: request.dueDate,
-    // Add additional calculated fields for frontend
-    isOverdue: request.dueDate ? new Date(request.dueDate) < new Date() : false,
-    daysUntilDue: request.dueDate ? 
-      Math.ceil((new Date(request.dueDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
-  })),
-  
-  // Payment Summary with request statistics
-  paymentSummary: {
-    ...paymentSummary,
-    // Add payment request statistics
-    pendingRequests: (booking.paymentrequest || []).filter(req => req.status === 'pending').length,
-    paidRequests: (booking.paymentrequest || []).filter(req => req.status === 'paid').length,
-    cancelledRequests: (booking.paymentrequest || []).filter(req => req.status === 'cancelled').length,
-    totalRequestAmount: (booking.paymentrequest || []).reduce((sum, req) => sum + req.amount, 0),
-    pendingRequestAmount: (booking.paymentrequest || [])
-      .filter(req => req.status === 'pending')
-      .reduce((sum, req) => sum + req.amount, 0)
-  },
-
-  // Pricing Details
-  pricing: booking.pricing || {
-    monthlyRent: 0,
-    totalRent: 0,
-    securityDeposit: 0,
-    advanceAmount: 0,
-    totalAmount: 0,
-    maintenanceFee: 0
-  },
-  
-  transferStatus: booking.transferStatus || 'pending',
-  transferDetails: booking.transferDetails || {},
-  approvedBy: approvedByName,
-  approvedAt: booking.approvedAt || null,
-  roomDetails: roomDetails,
-  customerDetails: booking.customerDetails || {},
-  createdAt: booking.createdAt,
-  updatedAt: booking.updatedAt,
-  outstandingAmount: booking.outstandingAmount || 0
-};
+          id: booking._id,
+          _id: booking._id,
+          clientId : booking.clientId,
+          clientobjectId : booking.approvedBy || 'N/A',
+          property: booking.propertyId ? {
+            _id: booking.propertyId._id,
+            name: booking.propertyId.name,
+            locality: booking.propertyId.locality,
+            city: booking.propertyId.city,
+            images: allImages, // ✅ Return combined images
+            primaryImage: primaryImageUrl // ✅ Easy access to primary image
+          } : null,
+          roomType: booking.roomType?.name || 'N/A',
+          roomNumber: primaryRoom.roomNumber || 'N/A',
+          floor: primaryRoom.floor || 'N/A',
+          bed: primaryRoom.bed || 'N/A',
+          moveInDate: booking.moveInDate,
+          moveOutDate: booking.moveOutDate,
+          durationType: booking.durationType,
+          durationDays: booking.durationDays,
+          durationMonths: booking.durationMonths,
+          personCount: booking.personCount,
+          bookingStatus: booking.bookingStatus,
+         
+          // ✅ Include full media data from booking
+          media: {
+            images: bookingImages.map(img => ({
+              url: img.url,
+              public_id: img.public_id,
+              resource_type: img.resource_type || 'image',
+              isPrimary: img.isPrimary || false,
+              uploadedAt: img.uploadedAt || booking.createdAt
+            })),
+            videos: booking.media?.videos?.map(vid => ({
+              url: vid.url,
+              public_id: vid.public_id,
+              resource_type: vid.resource_type || 'video',
+              uploadedAt: vid.uploadedAt || booking.createdAt
+            })) || []
+          },
+         
+          // Media counts for easy reference
+          mediaCounts: {
+            images: bookingImages.length,
+            videos: booking.media?.videos?.length || 0,
+            total: bookingImages.length + (booking.media?.videos?.length || 0)
+          },
+         
+          // Enhanced Payment Data
+          paymentInfo: {
+            paymentStatus: booking.paymentInfo?.paymentStatus || 'pending',
+            paymentMethod: booking.paymentInfo?.paymentMethod || 'razorpay',
+            paidAmount: booking.paymentInfo?.paidAmount || 0,
+            transactionId: booking.paymentInfo?.transactionId || null,
+            paymentDate: booking.paymentInfo?.paymentDate || null,
+            razorpayOrderId: booking.paymentInfo?.razorpayOrderId || null,
+            razorpayPaymentId: booking.paymentInfo?.razorpayPaymentId || null
+          },
+         
+          // All Payments History
+          payments: (booking.payments || []).map(payment => ({
+            date: payment.date,
+            amount: payment.amount,
+            method: payment.method,
+            status: payment.status,
+            transactionId: payment.transactionId,
+            description: payment.description,
+            razorpayOrderId: payment.razorpayOrderId,
+            razorpayPaymentId: payment.razorpayPaymentId,
+            // Include review data if available
+            review: payment.review ? {
+              rating: payment.review.rating,
+              comment: payment.review.comment,
+              reviewDate: payment.review.reviewDate
+            } : null,
+            type: payment.type || 'rent',
+            month: payment.month,
+            year: payment.year,
+            dueDate: payment.dueDate,
+            paidDate: payment.paidDate
+          })),
+         
+          // Payment Requests (from paymentrequest array)
+          paymentrequest: (booking.paymentrequest || []).map(request => ({
+            _id: request._id,
+            date: request.date,
+            amount: request.amount,
+            message: request.message,
+            type: request.type,
+            userId: request.userId,
+            status: request.status,
+            dueDate: request.dueDate,
+            // Add additional calculated fields for frontend
+            isOverdue: request.dueDate ? new Date(request.dueDate) < new Date() : false,
+            daysUntilDue: request.dueDate ?
+              Math.ceil((new Date(request.dueDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
+          })),
+         
+          // Payment Summary with request statistics
+          paymentSummary: {
+            ...paymentSummary,
+            // Add payment request statistics
+            pendingRequests: (booking.paymentrequest || []).filter(req => req.status === 'pending').length,
+            paidRequests: (booking.paymentrequest || []).filter(req => req.status === 'paid').length,
+            cancelledRequests: (booking.paymentrequest || []).filter(req => req.status === 'cancelled').length,
+            totalRequestAmount: (booking.paymentrequest || []).reduce((sum, req) => sum + req.amount, 0),
+            pendingRequestAmount: (booking.paymentrequest || [])
+              .filter(req => req.status === 'pending')
+              .reduce((sum, req) => sum + req.amount, 0)
+          },
+ 
+          // Pricing Details
+          pricing: booking.pricing || {
+            monthlyRent: 0,
+            totalRent: 0,
+            securityDeposit: 0,
+            advanceAmount: 0,
+            totalAmount: 0,
+            maintenanceFee: 0
+          },
+         
+          transferStatus: booking.transferStatus || 'pending',
+          transferDetails: booking.transferDetails || {},
+          approvedBy: approvedByName,
+          approvedAt: booking.approvedAt || null,
+          roomDetails: roomDetails,
+          customerDetails: booking.customerDetails || {},
+          createdAt: booking.createdAt,
+          updatedAt: booking.updatedAt,
+          outstandingAmount: booking.outstandingAmount || 0
+        };
         } catch (error) {
           console.error('❌ Error processing booking:', booking._id, error);
           return null;
         }
       })
     );
-
+ 
     // Filter out any null results from errors
     const validBookings = processedBookings.filter(booking => booking !== null);
-
+ 
     console.log('✅ Successfully processed bookings:', validBookings.length);
-
+ 
     return res.status(200).json({
       success: true,
       count: validBookings.length,
       bookings: validBookings,
       message: validBookings.length === 0 ? 'No bookings found for this user' : 'Bookings retrieved successfully'
     });
-
+ 
   } catch (error) {
     console.error('❌ Get user bookings error:', error);
     return res.status(500).json({
@@ -6007,6 +6357,7 @@ export const getUserBookings = async (req, res) => {
     });
   }
 };
+ 
 // Enhanced payment summary calculator
 const calculatePaymentSummary = (booking) => {
   try {
