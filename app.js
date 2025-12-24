@@ -220,6 +220,7 @@ import Admin from "./models/Admin.js";
 import User from "./models/User.js";
 import offlineBookingRoutes from "./routes/offlineBookingRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
+import chatbotRoutes from "./routes/chatbotRoutes.js";
 
 dotenv.config();
 
@@ -364,6 +365,7 @@ app.use("/api/custom-reviews", CustomReviewRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use('/api/offline-bookings', offlineBookingRoutes);
 app.use('/api/contacts', contactRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 
 // Health check endpoint

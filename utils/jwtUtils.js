@@ -144,3 +144,48 @@ export const verifyToken = async (req, res, next) => {
     });
   }
 };
+
+
+// Optional authentication - attach user if token exists
+export const optionalAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      req.user = null;
+      return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    if (!token || token.split('.').length !== 3) {
+      req.user = null;
+      return next();
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    const user = await User.findById(decoded.id).select('-password');
+    
+    if (user) {
+      req.user = {
+        _id: user._id,
+        id: user._id,
+        clientId: user.clientId,
+        phone: user.phone,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        userType: user.role
+      };
+    } else {
+      req.user = null;
+    }
+
+    next();
+  } catch (error) {
+    // If token verification fails, treat as unauthenticated
+    req.user = null;
+    next();
+  }
+};
