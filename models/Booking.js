@@ -2105,6 +2105,7 @@ const bookingSchema = new mongoose.Schema({
     razorpayOrderId: String,
     razorpayPaymentId: String,
     razorpaySignature: String,
+    UTRNumber: String, // RRN stored as UT
     paidAmount: {
       type: Number,
       default: 0

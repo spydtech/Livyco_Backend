@@ -5673,6 +5673,7 @@ export const getBookingsByProperty = async (req, res) => {
   }
 };
 
+
 // Get bookings of user (for regular users to see their own bookings)
 // export const getUserBookings = async (req, res) => {  
 //   try {
@@ -6254,7 +6255,8 @@ export const getUserBookings = async (req, res) => {
             transactionId: booking.paymentInfo?.transactionId || null,
             paymentDate: booking.paymentInfo?.paymentDate || null,
             razorpayOrderId: booking.paymentInfo?.razorpayOrderId || null,
-            razorpayPaymentId: booking.paymentInfo?.razorpayPaymentId || null
+            razorpayPaymentId: booking.paymentInfo?.razorpayPaymentId || null,
+           UTRNumber: booking.paymentInfo?.UTRNumber || null
           },
          
           // All Payments History
@@ -6267,6 +6269,7 @@ export const getUserBookings = async (req, res) => {
             description: payment.description,
             razorpayOrderId: payment.razorpayOrderId,
             razorpayPaymentId: payment.razorpayPaymentId,
+            UTRNumber: payment.UTRNumber || null,
             // Include review data if available
             review: payment.review ? {
               rating: payment.review.rating,
@@ -7372,6 +7375,7 @@ export const getBookingWithPaymentDetails = async (req, res) => {
           razorpayOrderId: booking.paymentInfo?.razorpayOrderId,
           razorpayPaymentId: booking.paymentInfo?.razorpayPaymentId,
           razorpaySignature: booking.paymentInfo?.razorpaySignature,
+          UTRNumber: booking.paymentInfo?.UTRNumber || null, // ✅ ADDED UTRNumber
           paymentDate: booking.paymentInfo?.paymentDate
         },
         
@@ -7386,6 +7390,7 @@ export const getBookingWithPaymentDetails = async (req, res) => {
           description: payment.description,
           razorpayOrderId: payment.razorpayOrderId,
           razorpayPaymentId: payment.razorpayPaymentId,
+          UTRNumber: payment.UTRNumber || null, // ✅ ADDED UTRNumber
           razorpaySignature: payment.razorpaySignature
         })) || [],
         
@@ -7659,6 +7664,136 @@ export const updateBookingStatus = async (req, res) => {
       success: false,
       message: 'Internal server error',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+export const getBookingsByClientId = async (req, res) => {
+  try {
+    const { clientId } = req.params;
+   
+    if (!clientId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Client ID is required'
+      });
+    }
+ 
+    console.log("Fetching bookings for client ID:", clientId);
+ 
+    // Find bookings by clientId field in Booking schema
+    const bookings = await Booking.find({
+      clientId: clientId
+    })
+      .populate('userId', 'name email phone clientId profileImage _id')
+      .populate('propertyId', 'name locality city _id')
+      .sort({ createdAt: -1 });
+ 
+    if (bookings.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No bookings found for this client ID',
+        bookings: [],
+        count: 0
+      });
+    }
+ 
+    // Format the response
+    const formattedBookings = bookings.map(booking => {
+      const roomNumbers = booking.roomDetails?.map(room => room.roomNumber).filter(Boolean) || [];
+      const floors = booking.roomDetails?.map(room => room.floor).filter(Boolean) || [];
+      const beds = booking.roomDetails?.map(room => room.bed).filter(Boolean) || [];
+     
+      const uniqueRoomNumbers = [...new Set(roomNumbers)];
+      const uniqueFloors = [...new Set(floors)];
+      const uniqueBeds = [...new Set(beds)];
+ 
+      // Calculate outstanding amount from the schema virtuals/methods
+      const totalAmountDue = booking.totalAmountDue ||
+                           ((booking.pricing?.totalAmount || 0) +
+                           (booking.pricing?.securityDeposit || 0) +
+                           (booking.pricing?.maintenanceFee || 0));
+     
+      const amountPaid = booking.amountPaid ||
+                        booking.payments
+                          ?.filter(p => p.status === 'completed')
+                          ?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
+     
+      const outstandingAmount = Math.max(0, totalAmountDue - amountPaid);
+ 
+      // Get last payment date
+      let lastPaymentDate = booking.moveInDate || booking.createdAt;
+      if (booking.payments && booking.payments.length > 0) {
+        const completedPayments = booking.payments.filter(p => p.status === 'completed');
+        if (completedPayments.length > 0) {
+          const sortedPayments = [...completedPayments].sort((a, b) =>
+            new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt)
+          );
+          lastPaymentDate = sortedPayments[0]?.date || sortedPayments[0]?.createdAt;
+        }
+      }
+ 
+      return {
+        _id: booking._id,
+        bookingId: booking._id,
+        user: booking.userId ? {
+          _id: booking.userId._id,
+          name: booking.userId.name,
+          email: booking.userId.email,
+          phone: booking.userId.phone,
+          clientId: booking.userId.clientId,
+          profileImage: booking.userId.profileImage || "https://t4.ftcdn.net/jpg/03/64/21/11/360_F_364211147_1qgLVxv1Tcq0Ohz3FawUfrtONzz8nq3e.jpg"
+        } : null,
+        clientId: booking.clientId,
+        property: booking.propertyId ? {
+          name: booking.propertyId.name,
+          locality: booking.propertyId.locality,
+          city: booking.propertyId.city,
+          _id: booking.propertyId._id
+        } : null,
+        roomType: booking.roomType?.name || 'N/A',
+        roomNumber: uniqueRoomNumbers.length > 0 ?
+                   (uniqueRoomNumbers.length === 1 ? uniqueRoomNumbers[0] : `${uniqueRoomNumbers.length} rooms`) : 'N/A',
+        floor: uniqueFloors.length > 0 ?
+              (uniqueFloors.length === 1 ? uniqueFloors[0] : `${uniqueFloors.length} floors`) : 'N/A',
+        bed: uniqueBeds.length > 0 ?
+            (uniqueBeds.length === 1 ? uniqueBeds[0] : `${uniqueBeds.length} beds`) : 'N/A',
+        roomDetails: booking.roomDetails || [],
+        totalRooms: booking.roomDetails?.length || 0,
+        moveInDate: booking.moveInDate,
+        moveOutDate: booking.moveOutDate,
+        status: booking.bookingStatus,
+        paymentInfo: booking.paymentInfo || {},
+        paymentStatus: booking.paymentInfo?.paymentStatus || 'pending',
+        transferStatus: booking.transferStatus || 'pending',
+        transferDetails: booking.transferDetails || {},
+        payments: booking.payments || [],
+        paymentrequest: booking.paymentrequest || [], // Important for PaymentChat component
+        pricing: booking.pricing || {},
+        approvedBy: booking.approvedBy || null,
+        approvedAt: booking.approvedAt || null,
+        // Fields for PaymentChat component
+        outstandingAmount: booking.outstandingAmount || outstandingAmount,
+        lastPaymentDate: lastPaymentDate,
+        // Additional pricing info
+        rent: booking.pricing?.monthlyRent || 0,
+        createdAt: booking.createdAt,
+        updatedAt: booking.updatedAt
+      };
+    });
+ 
+    return res.status(200).json({
+      success: true,
+      count: formattedBookings.length,
+      bookings: formattedBookings
+    });
+ 
+  } catch (error) {
+    console.error('Controller Error in getBookingsByClientId:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
     });
   }
 };
